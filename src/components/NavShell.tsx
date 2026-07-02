@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, LayoutGrid, Zap, Brain, Swords, Landmark, Library } from "lucide-react";
+import { BookOpen, LayoutGrid, Zap, Brain, Swords, Landmark, Library, Settings } from "lucide-react";
 import { AuthWidget } from "@/components/AuthWidget";
 
 const NAV_ITEMS = [
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/debate", label: "Debate", icon: Swords },
   { href: "/mind-palace", label: "Mind Palace", icon: Landmark },
   { href: "/facts", label: "Facts", icon: Library },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function NavShell({ children }: { children: React.ReactNode }) {
@@ -55,8 +56,8 @@ export function NavShell({ children }: { children: React.ReactNode }) {
 
         <main className="pb-24 md:pb-10">{children}</main>
 
-        <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/90 backdrop-blur-xs border-t border-line grid grid-cols-5">
-          {NAV_ITEMS.filter((i) => i.href !== "/facts").map((item) => {
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-surface/90 backdrop-blur-xs border-t border-line grid grid-cols-5">
+          {NAV_ITEMS.filter((i) => ["/", "/drill", "/memory", "/debate", "/settings"].includes(i.href)).map((item) => {
             const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
             const Icon = item.icon;
             return (

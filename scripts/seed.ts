@@ -5,11 +5,11 @@
  * into Supabase. Safe to re-run: uses upsert everywhere.
  */
 import { createClient } from "@supabase/supabase-js";
-import { LANE_LIST, FUTURE_LANES } from "../src/data/lanes";
+import { LANE_LIST, EXPANDABLE_LANE_GROUPS } from "../src/data/lanes";
 import { DEBATE_OPPONENTS } from "../src/data/debate";
 import { CHURCH_FATHERS } from "../src/data/facts/church-fathers";
 import { DOCTRINE_COMPARISONS, TIMELINE } from "../src/data/facts/doctrine-comparisons";
-import { DebateNode } from "../src/types";
+import { DebateNode, DoctrineLane } from "../src/types";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -21,59 +21,60 @@ if (!url || !key) {
 
 const supabase = createClient(url, key);
 
+async function seedOneLane(lane: DoctrineLane, isExpandable: boolean, category?: string) {
+  await supabase.from("doctrine_lanes").upsert({
+    slug: lane.slug,
+    order: lane.order,
+    title: lane.title,
+    summary: lane.summary,
+    goal: lane.goal,
+    difficulty: lane.difficulty,
+    is_expandable: isExpandable,
+    category: category ?? null,
+  });
+
+  for (const verse of lane.verses) {
+    await supabase.from("verses").upsert({
+      id: verse.id,
+      reference: verse.reference,
+      text: verse.text,
+      role: verse.role,
+    });
+    await supabase.from("lane_verses").upsert({
+      lane_slug: lane.slug,
+      verse_id: verse.id,
+      function: verse.function,
+    });
+  }
+
+  for (const q of lane.drillQuestions) {
+    await supabase.from("drill_questions").upsert({
+      id: q.id,
+      lane_slug: lane.slug,
+      level: q.level,
+      type: q.type,
+      prompt: q.prompt,
+      answer: q.answer,
+      choices: q.choices ?? null,
+      verse_id: q.verseId ?? null,
+    });
+  }
+}
+
 async function seedLanes() {
   for (const lane of LANE_LIST) {
-    await supabase.from("doctrine_lanes").upsert({
-      slug: lane.slug,
-      order: lane.order,
-      title: lane.title,
-      summary: lane.summary,
-      goal: lane.goal,
-      difficulty: lane.difficulty,
-      is_expandable: false,
-    });
+    await seedOneLane(lane, false);
+  }
 
-    for (const verse of lane.verses) {
-      await supabase.from("verses").upsert({
-        id: verse.id,
-        reference: verse.reference,
-        text: verse.text,
-        role: verse.role,
-      });
-      await supabase.from("lane_verses").upsert({
-        lane_slug: lane.slug,
-        verse_id: verse.id,
-        function: verse.function,
-      });
-    }
-
-    for (const q of lane.drillQuestions) {
-      await supabase.from("drill_questions").upsert({
-        id: q.id,
-        lane_slug: lane.slug,
-        level: q.level,
-        type: q.type,
-        prompt: q.prompt,
-        answer: q.answer,
-        choices: q.choices ?? null,
-        verse_id: q.verseId ?? null,
-      });
+  let expandableCount = 0;
+  for (const group of EXPANDABLE_LANE_GROUPS) {
+    for (const lane of group.lanes) {
+      await seedOneLane(lane, true, group.category);
+      expandableCount += 1;
     }
   }
 
-  for (const future of FUTURE_LANES) {
-    await supabase.from("doctrine_lanes").upsert({
-      slug: future.slug,
-      order: 99,
-      title: future.title,
-      summary: "Expandable lane, content ships in a later pass.",
-      goal: "",
-      difficulty: 1,
-      is_expandable: true,
-      category: future.category,
-    });
-  }
-  console.log(`Seeded ${LANE_LIST.length} lanes + ${FUTURE_LANES.length} future lane placeholders.`);
+  console.log(`Seeded ${LANE_LIST.length} primary lanes + ${expandableCount} expandable lanes with real content.`);
 }
 
 async function seedDebate() {

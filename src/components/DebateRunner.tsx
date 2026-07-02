@@ -120,7 +120,7 @@ export function DebateRunner({ opponent }: { opponent: DebateOpponent }) {
             <button
               key={c.key}
               onClick={() => choose(c.key)}
-              className="text-left text-sm px-4 py-3 rounded-xl border border-line bg-white hover:bg-paper-dim transition-colors"
+              className="text-left text-sm px-4 py-3 rounded-xl border border-line bg-surface hover:bg-paper-dim transition-colors"
             >
               <span className="font-mono text-xs text-ink-faint mr-2">{c.key}</span>
               {c.text}

@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getLane, LANE_LIST } from "@/data/lanes";
+import { getLane, ALL_LANES_LIST } from "@/data/lanes";
 import { ArrowLeft } from "lucide-react";
 
 export function generateStaticParams() {
-  return LANE_LIST.map((l) => ({ slug: l.slug }));
+  return ALL_LANES_LIST.map((l) => ({ slug: l.slug }));
 }
 
 export default function LaneDetailPage({ params }: { params: { slug: string } }) {

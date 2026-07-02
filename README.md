@@ -181,6 +181,16 @@ scripts/
 
 ## Changelog
 
+**This pass (Lake 3, Lake 4, dark mode, more fixes):**
+- **Lake 3 shipped**: all 4 remaining debate opponents fully treed. Secular Critic (6 topics), Modalism Accuser (6), Church History Challenger (6), Apostolic Oneness practice mode (6). All 10 opponents are now live, zero "next pass" badges left anywhere.
+- **Lake 4 shipped**: all 31 expandable doctrine lanes populated with real content, 3 verses, 1 objection with answer path, 3 drill questions, 2 memory prompts each. Scoped lighter than the primary 8 (which keep full 7-verse, 7-level depth) on purpose, browsable and drillable from `/lanes`, not wired into the Drill/Memory daily pickers.
+- **Fixed the Supabase sync link.** Root cause: Supabase's magic-link email doesn't always honor `emailRedirectTo` if that exact path isn't in the project's Redirect URLs allowlist, it can fall back to the Site URL instead. Added `AuthCodeHandler`, mounted globally, which finishes sign-in from wherever the `?code=` param lands, not just `/auth/callback`. Still add the redirect URL in Supabase (see setup below), this is defense in depth on top of that, not a replacement for it.
+- **Fixed the timer starting automatically.** It was starting the moment the page loaded. Now it only starts once the first message is actually sent.
+- **Added Infinite vs Moderated debate mode.** Moderated (default) caps at 8 turns and prompts for a verdict. Infinite removes the cap. A "Get verdict now" link is available in both modes at any time.
+- **Fixed markdown formatting.** Headers (`###`) and dividers (`***`) were showing as literal characters. `MarkdownLite` now handles both, plus bold, italics, and bullet lists.
+- **Added dark mode.** Settings page, light/dark/system toggle, persisted, no flash on load. Color system runs on CSS variables now (`tailwind.config.ts` + `globals.css`), so this didn't require touching every component individually.
+- Removed several stray leftover files from earlier flaky tool-call retries that had snuck into the repo without being wired into anything (`ChatBubble.tsx`, `debate-session-store.ts`, `use-debate-moderator.ts`, `debate-persistence.ts`, an orphaned `/login` page). None of it was live code, all deleted.
+
 **This pass (bug fixes + AI Debate quality-of-life):**
 - Markdown now actually renders in AI Debate and Browser AI chat (bold/italics/bullets), instead
   of showing raw `**asterisks**`.

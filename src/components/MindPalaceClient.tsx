@@ -175,22 +175,22 @@ function RouteBuilder({ onSave, onCancel }: { onSave: (r: MindPalaceRoute) => vo
     <div className="paper-card p-6 mb-8">
       <p className="eyebrow mb-4">Build a route</p>
       <div className="grid sm:grid-cols-2 gap-3 mb-4">
-        <input placeholder="Route title" value={title} onChange={(e) => setTitle(e.target.value)} className="border border-line rounded-lg px-3 py-2 text-sm bg-white" />
-        <input placeholder="Room / location name" value={roomName} onChange={(e) => setRoomName(e.target.value)} className="border border-line rounded-lg px-3 py-2 text-sm bg-white" />
-        <select value={laneSlug} onChange={(e) => setLaneSlug(e.target.value as LaneSlug)} className="border border-line rounded-lg px-3 py-2 text-sm bg-white">
+        <input placeholder="Route title" value={title} onChange={(e) => setTitle(e.target.value)} className="border border-line rounded-lg px-3 py-2 text-sm bg-surface" />
+        <input placeholder="Room / location name" value={roomName} onChange={(e) => setRoomName(e.target.value)} className="border border-line rounded-lg px-3 py-2 text-sm bg-surface" />
+        <select value={laneSlug} onChange={(e) => setLaneSlug(e.target.value as LaneSlug)} className="border border-line rounded-lg px-3 py-2 text-sm bg-surface">
           {LANE_LIST.map((l) => <option key={l.slug} value={l.slug}>{l.title}</option>)}
         </select>
-        <input placeholder="Debate use / when to reach for this" value={debateUse} onChange={(e) => setDebateUse(e.target.value)} className="border border-line rounded-lg px-3 py-2 text-sm bg-white" />
+        <input placeholder="Debate use / when to reach for this" value={debateUse} onChange={(e) => setDebateUse(e.target.value)} className="border border-line rounded-lg px-3 py-2 text-sm bg-surface" />
       </div>
 
       <p className="eyebrow mb-2">Objects, in order</p>
       <div className="space-y-2 mb-3">
         {objects.map((o, i) => (
           <div key={o.id} className="grid sm:grid-cols-4 gap-2">
-            <input placeholder="Object (Door, Table...)" value={o.objectName} onChange={(e) => updateObject(i, { objectName: e.target.value })} className="border border-line rounded-lg px-3 py-2 text-xs bg-white" />
-            <input placeholder="Reference" value={o.reference} onChange={(e) => updateObject(i, { reference: e.target.value })} className="border border-line rounded-lg px-3 py-2 text-xs bg-white" />
-            <input placeholder="Phrase" value={o.phrase} onChange={(e) => updateObject(i, { phrase: e.target.value })} className="border border-line rounded-lg px-3 py-2 text-xs bg-white" />
-            <input placeholder="Function / notes" value={o.function} onChange={(e) => updateObject(i, { function: e.target.value })} className="border border-line rounded-lg px-3 py-2 text-xs bg-white" />
+            <input placeholder="Object (Door, Table...)" value={o.objectName} onChange={(e) => updateObject(i, { objectName: e.target.value })} className="border border-line rounded-lg px-3 py-2 text-xs bg-surface" />
+            <input placeholder="Reference" value={o.reference} onChange={(e) => updateObject(i, { reference: e.target.value })} className="border border-line rounded-lg px-3 py-2 text-xs bg-surface" />
+            <input placeholder="Phrase" value={o.phrase} onChange={(e) => updateObject(i, { phrase: e.target.value })} className="border border-line rounded-lg px-3 py-2 text-xs bg-surface" />
+            <input placeholder="Function / notes" value={o.function} onChange={(e) => updateObject(i, { function: e.target.value })} className="border border-line rounded-lg px-3 py-2 text-xs bg-surface" />
           </div>
         ))}
       </div>

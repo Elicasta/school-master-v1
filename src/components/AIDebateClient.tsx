@@ -10,7 +10,7 @@ import { AuthWidget } from "@/components/AuthWidget";
 import { getDraft, saveDraft, clearDraft, DebateMessage } from "@/lib/local-store";
 import { persistTranscript } from "@/lib/persist-transcript";
 
-const MAX_TURNS = 8; // moderator steps in after this many user turns to keep debates from sprawling
+const MAX_TURNS = 8; // moderator steps in after this many user turns in Moderated mode
 const MODERATOR_PROMPT =
   "MODERATOR: Wrap up this debate now. Give a final verdict: summarize the strongest point each side made, then score the user's overall performance on clarity, scripture use, logic, and fairness (1-5 each) with one sentence of coaching for next time.";
 
@@ -27,20 +27,27 @@ export function AIDebateClient() {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [moderatorClosed, setModeratorClosed] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [debateMode, setDebateMode] = useState<"moderated" | "infinite">("moderated");
   const scrollRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(crypto.randomUUID());
 
   const userTurns = messages.filter((m) => m.role === "user").length;
 
   // Restore an in-progress draft when switching back to this opponent (fixes the
-  // "chat disappears when I navigate away" problem) and start a live elapsed timer.
+  // "chat disappears when I navigate away" problem).
   useEffect(() => {
     const draft = getDraft("ai", opponentType);
     setMessages(draft);
     setModeratorClosed(false);
+  }, [opponentType]);
+
+  // Elapsed timer only runs once the debate actually has a message, not from the
+  // moment the page loads, that was the "timer starts automatically" bug.
+  useEffect(() => {
+    if (userTurns === 0) return;
     const timer = window.setInterval(() => setElapsedSec((s) => s + 1), 1000);
     return () => window.clearInterval(timer);
-  }, [opponentType]);
+  }, [userTurns > 0]);
 
   useEffect(() => {
     saveDraft("ai", opponentType, messages);
@@ -133,7 +140,7 @@ export function AIDebateClient() {
 
   const mins = Math.floor(elapsedSec / 60);
   const secs = elapsedSec % 60;
-  const atCap = userTurns >= MAX_TURNS;
+  const atCap = debateMode === "moderated" && userTurns >= MAX_TURNS;
 
   return (
     <div className="px-5 py-8 md:px-10 md:py-10 max-w-2xl mx-auto">
@@ -163,15 +170,31 @@ export function AIDebateClient() {
       </div>
 
       <div className="grid sm:grid-cols-2 gap-3 mb-4">
-        <select value={opponentType} onChange={(e) => setOpponentType(e.target.value as OpponentType)} className="border border-line rounded-lg px-3 py-2 text-sm bg-white">
+        <select value={opponentType} onChange={(e) => setOpponentType(e.target.value as OpponentType)} className="border border-line rounded-lg px-3 py-2 text-sm bg-surface">
           {OPPONENT_LIST.map((o) => <option key={o.type} value={o.type}>{o.label}</option>)}
         </select>
-        <input placeholder="Topic lock (optional)" value={topic} onChange={(e) => setTopic(e.target.value)} className="border border-line rounded-lg px-3 py-2 text-sm bg-white" />
+        <input placeholder="Topic lock (optional)" value={topic} onChange={(e) => setTopic(e.target.value)} className="border border-line rounded-lg px-3 py-2 text-sm bg-surface" />
       </div>
 
-      <div className="flex items-center justify-between mb-3 text-xs text-ink-faint font-mono">
-        <span>Turn {userTurns} / {MAX_TURNS}</span>
-        <span>{mins}:{secs.toString().padStart(2, "0")} elapsed</span>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => setDebateMode("moderated")}
+            className={`text-xs px-3 py-1.5 rounded-full border ${debateMode === "moderated" ? "bg-ink text-paper border-ink" : "border-line text-ink-faint"}`}
+          >
+            Moderated
+          </button>
+          <button
+            onClick={() => setDebateMode("infinite")}
+            className={`text-xs px-3 py-1.5 rounded-full border ${debateMode === "infinite" ? "bg-ink text-paper border-ink" : "border-line text-ink-faint"}`}
+          >
+            Infinite
+          </button>
+        </div>
+        <div className="text-xs text-ink-faint font-mono text-right">
+          <div>Turn {userTurns}{debateMode === "moderated" ? ` / ${MAX_TURNS}` : ""}</div>
+          <div>{mins}:{secs.toString().padStart(2, "0")} elapsed</div>
+        </div>
       </div>
 
       <div ref={scrollRef} className="paper-card p-4 min-h-[300px] max-h-[440px] overflow-y-auto mb-4 space-y-3">
@@ -206,16 +229,21 @@ export function AIDebateClient() {
             onKeyDown={(e) => e.key === "Enter" && send()}
             placeholder="Your response..."
             disabled={loading}
-            className="flex-1 border border-line rounded-xl px-4 py-3 text-sm bg-white"
+            className="flex-1 border border-line rounded-xl px-4 py-3 text-sm bg-surface"
           />
           <button onClick={send} disabled={loading} className="btn-primary"><Send size={15} /></button>
         </div>
       )}
 
       {messages.length > 0 && !moderatorClosed && (
-        <button onClick={handleSave} className="text-xs text-slate underline underline-offset-4 mt-3">
-          <Save size={11} className="inline -mt-0.5 mr-1" /> Save transcript now
-        </button>
+        <div className="flex gap-4 mt-3">
+          <button onClick={handleSave} className="text-xs text-slate underline underline-offset-4">
+            <Save size={11} className="inline -mt-0.5 mr-1" /> Save transcript now
+          </button>
+          <button onClick={requestVerdict} disabled={loading} className="text-xs text-gold underline underline-offset-4">
+            <Gavel size={11} className="inline -mt-0.5 mr-1" /> Get verdict now
+          </button>
+        </div>
       )}
       {saveMsg && <p className="text-xs text-ink-faint mt-2">{saveMsg}</p>}
     </div>

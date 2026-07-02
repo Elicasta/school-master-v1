@@ -124,7 +124,7 @@ export function DrillClient() {
         <select
           value={laneSlug}
           onChange={(e) => setLaneSlug(e.target.value as LaneSlug)}
-          className="text-sm border border-line rounded-lg px-3 py-2 bg-white"
+          className="text-sm border border-line rounded-lg px-3 py-2 bg-surface"
         >
           {LANE_LIST.map((l) => (
             <option key={l.slug} value={l.slug}>{l.title}</option>
@@ -133,7 +133,7 @@ export function DrillClient() {
         <select
           value={level}
           onChange={(e) => setLevel(Number(e.target.value) as DrillLevel)}
-          className="text-sm border border-line rounded-lg px-3 py-2 bg-white"
+          className="text-sm border border-line rounded-lg px-3 py-2 bg-surface"
         >
           {[1, 2, 3, 4, 5, 6, 7].map((l) => (
             <option key={l} value={l}>Level {l}</option>
@@ -155,7 +155,7 @@ export function DrillClient() {
                 className={`text-left text-sm px-4 py-3 rounded-xl border transition-colors ${
                   revealed && choice === current.answer
                     ? "border-slate bg-slate-dim"
-                    : "border-line bg-white hover:bg-paper-dim"
+                    : "border-line bg-surface hover:bg-paper-dim"
                 }`}
               >
                 {choice}
@@ -169,7 +169,7 @@ export function DrillClient() {
               onChange={(e) => setUserAnswer(e.target.value)}
               disabled={answerShown}
               placeholder="Type your answer, then reveal to self-grade..."
-              className="w-full text-sm border border-line rounded-xl px-4 py-3 bg-white min-h-[80px]"
+              className="w-full text-sm border border-line rounded-xl px-4 py-3 bg-surface min-h-[80px]"
             />
             {!answerShown ? (
               <button onClick={() => setAnswerShown(true)} className="btn-secondary text-sm">Reveal answer</button>

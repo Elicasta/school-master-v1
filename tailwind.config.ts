@@ -1,30 +1,38 @@
 import type { Config } from "tailwindcss";
 
+// Colors are wired to CSS custom properties (defined in globals.css :root and
+// .dark) rather than hardcoded hex, so dark mode is a single class toggle on
+// <html> instead of dark: prefixes sprinkled through every component.
+function cssVar(name: string) {
+  return `rgb(var(${name}) / <alpha-value>)`;
+}
+
 const config: Config = {
   darkMode: "class",
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        paper: "#F5F3EE",
-        "paper-dim": "#EDEAE1",
-        ink: "#1C1B1A",
-        "ink-soft": "#4A4744",
-        "ink-faint": "#8B8780",
-        line: "#E3DFD5",
+        paper: cssVar("--color-paper"),
+        "paper-dim": cssVar("--color-paper-dim"),
+        surface: cssVar("--color-surface"),
+        ink: cssVar("--color-ink"),
+        "ink-soft": cssVar("--color-ink-soft"),
+        "ink-faint": cssVar("--color-ink-faint"),
+        line: cssVar("--color-line"),
         gold: {
-          DEFAULT: "#9C7A3C",
-          soft: "#C9AD7C",
-          dim: "#E9DFC9",
+          DEFAULT: cssVar("--color-gold"),
+          soft: cssVar("--color-gold-soft"),
+          dim: cssVar("--color-gold-dim"),
         },
         slate: {
-          DEFAULT: "#34506B",
-          soft: "#5A7791",
-          dim: "#E4EAEF",
+          DEFAULT: cssVar("--color-slate"),
+          soft: cssVar("--color-slate-soft"),
+          dim: cssVar("--color-slate-dim"),
         },
         rose: {
-          DEFAULT: "#8C4A42",
-          dim: "#F0DEDB",
+          DEFAULT: cssVar("--color-rose"),
+          dim: cssVar("--color-rose-dim"),
         },
       },
       fontFamily: {
@@ -37,8 +45,8 @@ const config: Config = {
         "2xl": "24px",
       },
       boxShadow: {
-        card: "0 1px 2px rgba(28,27,26,0.04), 0 8px 24px -12px rgba(28,27,26,0.10)",
-        glass: "0 1px 1px rgba(28,27,26,0.03), 0 12px 32px -16px rgba(28,27,26,0.14)",
+        card: "0 1px 2px rgba(0,0,0,0.04), 0 8px 24px -12px rgba(0,0,0,0.10)",
+        glass: "0 1px 1px rgba(0,0,0,0.03), 0 12px 32px -16px rgba(0,0,0,0.14)",
       },
       backdropBlur: {
         xs: "2px",

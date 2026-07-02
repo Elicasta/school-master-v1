@@ -1,14 +1,9 @@
 // ---------- Core content types ----------
 
-export type LaneSlug =
-  | "one-god"
-  | "jesus-god-revealed"
-  | "sonship-humanity"
-  | "father-in-christ"
-  | "savior-name"
-  | "creation-word"
-  | "baptism-jesus-name"
-  | "holy-ghost-spirit";
+// The original 8 lanes used a strict literal union. Lake 4 added 31 more lane
+// slugs (expandable lanes), so this is now a plain string, still called LaneSlug
+// for clarity at call sites, but no longer restricted to the original 8.
+export type LaneSlug = string;
 
 export type VerseRole = "anchor" | "variant";
 
@@ -69,11 +64,9 @@ export interface DoctrineLane {
   masteryPercent: number; // runtime, starts 0
 }
 
-export interface FutureLane {
-  slug: string;
-  title: string;
-  category: string;
-}
+// FutureLane was the Lake 1-3 placeholder shape for expandable lanes with no
+// content yet. Lake 4 populated all of them as real DoctrineLane entries, so
+// this type is no longer needed.
 
 // ---------- Debate engine types ----------
 

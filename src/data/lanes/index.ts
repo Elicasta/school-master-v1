@@ -1,4 +1,4 @@
-import { DoctrineLane, FutureLane, LaneSlug } from "@/types";
+import { DoctrineLane, LaneSlug } from "@/types";
 import { oneGod } from "./one-god";
 import { jesusGodRevealed } from "./jesus-god-revealed";
 import { sonshipHumanity } from "./sonship-humanity";
@@ -7,8 +7,15 @@ import { saviorName } from "./savior-name";
 import { creationWord } from "./creation-word";
 import { baptismJesusName } from "./baptism-jesus-name";
 import { holyGhostSpirit } from "./holy-ghost-spirit";
+import { CORE_CHRISTOLOGY_LANES } from "./core-christology";
+import { KEY_TEXTS_LANES } from "./key-texts";
+import { HISTORY_LANES } from "./history";
+import { COMPARATIVE_LANES } from "./comparative";
 
-export const LANES: Record<LaneSlug, DoctrineLane> = {
+// The original 8 "primary" lanes: full depth (7 verses, 2 objections, all 7 drill
+// levels). These are the only lanes wired into Drill Mode's lane picker and
+// Memory Mode's seed deck, they're the intended daily-study core.
+export const PRIMARY_LANES: Record<string, DoctrineLane> = {
   "one-god": oneGod,
   "jesus-god-revealed": jesusGodRevealed,
   "sonship-humanity": sonshipHumanity,
@@ -19,44 +26,38 @@ export const LANES: Record<LaneSlug, DoctrineLane> = {
   "holy-ghost-spirit": holyGhostSpirit,
 };
 
-export const LANE_LIST: DoctrineLane[] = Object.values(LANES).sort((a, b) => a.order - b.order);
+// Lake 4: the 31 expandable lanes, scoped to 3 verses / 1 objection / 3 drill
+// levels each rather than the primary lanes' full depth, real content
+// throughout, no placeholders, browsable and drillable via their own /lanes/:slug
+// pages, just not mixed into the primary 8's daily-rotation pickers.
+export const EXPANDABLE_LANES: DoctrineLane[] = [
+  ...CORE_CHRISTOLOGY_LANES,
+  ...KEY_TEXTS_LANES,
+  ...HISTORY_LANES,
+  ...COMPARATIVE_LANES,
+];
+
+export const LANES: Record<string, DoctrineLane> = {
+  ...PRIMARY_LANES,
+  ...Object.fromEntries(EXPANDABLE_LANES.map((l) => [l.slug, l])),
+};
+
+export const LANE_LIST: DoctrineLane[] = Object.values(PRIMARY_LANES).sort((a, b) => a.order - b.order);
+
+export const ALL_LANES_LIST: DoctrineLane[] = Object.values(LANES).sort((a, b) => a.order - b.order);
 
 export function getLane(slug: string): DoctrineLane | undefined {
   return LANES[slug as LaneSlug];
 }
 
-// Expandable future lanes: structure exists now so Lake 3 can populate content
-// without a schema or navigation change. Category groups them for the UI.
-export const FUTURE_LANES: FutureLane[] = [
-  { slug: "right-hand-of-god", title: "Right Hand of God", category: "Core Christology" },
-  { slug: "mediator-high-priest", title: "Mediator / High Priest", category: "Core Christology" },
-  { slug: "lamb-and-sacrifice", title: "Lamb and Sacrifice", category: "Core Christology" },
-  { slug: "name-of-jesus", title: "Name of Jesus", category: "Core Christology" },
-  { slug: "godhead", title: "Godhead", category: "Core Christology" },
-  { slug: "incarnation", title: "Incarnation", category: "Core Christology" },
-  { slug: "preexistence", title: "Preexistence", category: "Core Christology" },
-  { slug: "father-son-language", title: "Father/Son Language", category: "Core Christology" },
-  { slug: "spirit-of-christ", title: "Spirit of Christ", category: "Core Christology" },
-  { slug: "worship-of-jesus", title: "Worship of Jesus", category: "Core Christology" },
-  { slug: "judgment", title: "Judgment", category: "Core Christology" },
-  { slug: "resurrection", title: "Resurrection", category: "Core Christology" },
-  { slug: "subjection-of-the-son", title: "Subjection of the Son", category: "Core Christology" },
-  { slug: "john-17", title: "John 17", category: "Key Texts" },
-  { slug: "matthew-28-19", title: "Matthew 28:19", category: "Key Texts" },
-  { slug: "acts-baptism-formula", title: "Acts Baptism Formula", category: "Key Texts" },
-  { slug: "1-corinthians-8-6", title: "1 Corinthians 8:6", category: "Key Texts" },
-  { slug: "philippians-2", title: "Philippians 2", category: "Key Texts" },
-  { slug: "hebrews-1", title: "Hebrews 1", category: "Key Texts" },
-  { slug: "revelation-throne-texts", title: "Revelation Throne Texts", category: "Key Texts" },
-  { slug: "jewish-monotheism", title: "Jewish Monotheism", category: "History" },
-  { slug: "church-fathers", title: "Church Fathers", category: "History" },
-  { slug: "councils", title: "Councils", category: "History" },
-  { slug: "trinity-formation", title: "Trinity Formation", category: "History" },
-  { slug: "oneness-history", title: "Oneness History", category: "History" },
-  { slug: "modalism-accusations", title: "Modalism Accusations", category: "History" },
-  { slug: "arianism", title: "Arianism", category: "Comparative" },
-  { slug: "socinianism", title: "Socinianism", category: "Comparative" },
-  { slug: "jehovahs-witness-christology", title: "Jehovah's Witness Christology", category: "Comparative" },
-  { slug: "mormon-doctrine", title: "Mormon Doctrine", category: "Comparative" },
-  { slug: "islamic-tawhid-objections", title: "Islamic Tawhid Objections", category: "Comparative" },
+export interface LaneCategoryGroup {
+  category: string;
+  lanes: DoctrineLane[];
+}
+
+export const EXPANDABLE_LANE_GROUPS: LaneCategoryGroup[] = [
+  { category: "Core Christology", lanes: CORE_CHRISTOLOGY_LANES },
+  { category: "Key Texts", lanes: KEY_TEXTS_LANES },
+  { category: "History", lanes: HISTORY_LANES },
+  { category: "Comparative", lanes: COMPARATIVE_LANES },
 ];

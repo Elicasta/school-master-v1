@@ -5,13 +5,17 @@ import { jehovahsWitness } from "./jehovahs-witness";
 import { mormon } from "./mormon";
 import { muslim } from "./muslim";
 import { jewishMonotheist } from "./jewish-monotheist";
+import { secularCritic } from "./secular-critic";
+import { modalismAccuser } from "./modalism-accuser";
+import { churchHistoryChallenger } from "./church-history-challenger";
+import { apostolicOneness } from "./apostolic-oneness";
 
-// Lake 1 shipped Trinitarian. Lake 2 adds the five opponents whose topic lists were
-// spelled out in the original spec (Murray, JW, Mormon, Muslim, Jewish Monotheist),
-// each with a real, graded argument for every named topic. The remaining three
-// (Secular Critic, Modalism Accuser, Church History Challenger) plus the Apostolic
-// Oneness practice mode never had topic lists defined in the spec, so their trees
-// stay empty and honestly labeled "next pass" rather than improvised.
+// Lake 1 shipped Trinitarian. Lake 2 added the five opponents whose topic lists
+// were spelled out in the original spec. Lake 3 adds the remaining four, whose
+// topic lists were never defined anywhere upstream, so they're this project's
+// own design, built to the same one-level, four-choice, real-rubric standard
+// as Lake 2 rather than left as placeholders. All ten opponents are now fully
+// treed. Zero opponents remain in "next pass" status.
 export const DEBATE_OPPONENTS: Record<OpponentType, DebateOpponent> = {
   trinitarian,
   murray,
@@ -19,30 +23,10 @@ export const DEBATE_OPPONENTS: Record<OpponentType, DebateOpponent> = {
   mormon,
   muslim,
   "jewish-monotheist": jewishMonotheist,
-  "apostolic-oneness": {
-    type: "apostolic-oneness",
-    label: "Apostolic Oneness",
-    description: "Practice mode: argue the Oneness position against a peer for sharpening, not correction.",
-    topics: [],
-  },
-  "secular-critic": {
-    type: "secular-critic",
-    label: "Secular Critic",
-    description: "Argues from historical-critical method, textual variants, and comparative religion.",
-    topics: [],
-  },
-  "modalism-accuser": {
-    type: "modalism-accuser",
-    label: "Modalism Accuser",
-    description: "Argues Oneness theology is the ancient heresy of Sabellian modalism, condemned at Nicaea.",
-    topics: [],
-  },
-  "church-history-challenger": {
-    type: "church-history-challenger",
-    label: "Church History Challenger",
-    description: "Argues from the early creeds and councils that Trinitarianism is the historic, continuous position.",
-    topics: [],
-  },
+  "secular-critic": secularCritic,
+  "modalism-accuser": modalismAccuser,
+  "church-history-challenger": churchHistoryChallenger,
+  "apostolic-oneness": apostolicOneness,
 };
 
 export const OPPONENT_LIST: DebateOpponent[] = Object.values(DEBATE_OPPONENTS);

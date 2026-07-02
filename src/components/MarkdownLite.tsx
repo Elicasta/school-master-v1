@@ -3,44 +3,91 @@
 import { Fragment, ReactNode } from "react";
 
 /**
- * Renders a small, safe subset of markdown: **bold**, *italic*, and "- "/"* " bullet
- * lists, with paragraph breaks preserved. AI responses (Gemini and Chrome's local
- * model) come back with this formatting; without rendering it, people see raw
- * asterisks in the chat, which looks broken. Intentionally not a full markdown
- * parser, headers/links/code blocks aren't needed for a debate chat transcript.
+ * Renders the small subset of markdown AI debate responses actually use: #/##/###
+ * headers, **bold**, *italic*, "-"/"*" bullet lists, and "***"/"---" dividers, with
+ * paragraph breaks preserved. Without this, people see literal "###" and "***"
+ * characters in the chat, which is what was still leaking through before headers
+ * and dividers were handled. Line-based, not a full markdown parser on purpose,
+ * code blocks/links/tables aren't needed for a debate transcript.
  */
 export function MarkdownLite({ text }: { text: string }) {
-  const blocks = text.split(/\n{2,}/);
+  const lines = text.split("\n");
+  const nodes: ReactNode[] = [];
+  let paragraphBuf: string[] = [];
+  let listBuf: string[] = [];
 
-  return (
-    <>
-      {blocks.map((block, i) => {
-        const lines = block.split("\n").filter((l) => l.trim().length > 0);
-        const isList = lines.length > 0 && lines.every((l) => /^\s*[-*]\s+/.test(l));
+  function flushParagraph(key: string) {
+    if (paragraphBuf.length === 0) return;
+    nodes.push(
+      <p key={key} className="mt-2 first:mt-0">
+        {paragraphBuf.map((line, j) => (
+          <Fragment key={j}>
+            {j > 0 && <br />}
+            {renderInline(line)}
+          </Fragment>
+        ))}
+      </p>,
+    );
+    paragraphBuf = [];
+  }
 
-        if (isList) {
-          return (
-            <ul key={i} className="list-disc pl-4 space-y-1 my-1">
-              {lines.map((line, j) => (
-                <li key={j}>{renderInline(line.replace(/^\s*[-*]\s+/, ""))}</li>
-              ))}
-            </ul>
-          );
-        }
+  function flushList(key: string) {
+    if (listBuf.length === 0) return;
+    nodes.push(
+      <ul key={key} className="list-disc pl-4 space-y-1 mt-2 first:mt-0">
+        {listBuf.map((line, j) => (
+          <li key={j}>{renderInline(line)}</li>
+        ))}
+      </ul>,
+    );
+    listBuf = [];
+  }
 
-        return (
-          <p key={i} className={i > 0 ? "mt-2" : ""}>
-            {lines.map((line, j) => (
-              <Fragment key={j}>
-                {j > 0 && <br />}
-                {renderInline(line)}
-              </Fragment>
-            ))}
-          </p>
-        );
-      })}
-    </>
-  );
+  lines.forEach((rawLine, i) => {
+    const line = rawLine.trim();
+    const key = `b${i}`;
+
+    if (line === "") {
+      flushParagraph(key);
+      flushList(key);
+      return;
+    }
+
+    if (/^(\*\*\*+|---+|___+)$/.test(line)) {
+      flushParagraph(key);
+      flushList(key);
+      nodes.push(<hr key={key} className="my-3 border-line" />);
+      return;
+    }
+
+    const headerMatch = line.match(/^(#{1,6})\s+(.*)$/);
+    if (headerMatch) {
+      flushParagraph(key);
+      flushList(key);
+      const level = headerMatch[1].length;
+      nodes.push(
+        <p key={key} className={`font-display mt-3 first:mt-0 ${level <= 2 ? "text-base" : "text-sm"}`}>
+          {renderInline(headerMatch[2])}
+        </p>,
+      );
+      return;
+    }
+
+    const listMatch = line.match(/^[-*]\s+(.*)$/);
+    if (listMatch) {
+      flushParagraph(key);
+      listBuf.push(listMatch[1]);
+      return;
+    }
+
+    flushList(key);
+    paragraphBuf.push(line);
+  });
+
+  flushParagraph("last-p");
+  flushList("last-l");
+
+  return <>{nodes}</>;
 }
 
 function renderInline(text: string): ReactNode[] {

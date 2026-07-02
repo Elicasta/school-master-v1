@@ -69,7 +69,7 @@ export function AuthWidget({ compact = false }: { compact?: boolean }) {
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         placeholder="Email to sync transcripts"
-        className="border border-line rounded-lg px-2 py-1 text-xs bg-white flex-1 min-w-0"
+        className="border border-line rounded-lg px-2 py-1 text-xs bg-surface flex-1 min-w-0"
       />
       <button onClick={sendLink} className="text-xs text-slate underline underline-offset-2 shrink-0 inline-flex items-center gap-1">
         <LogIn size={11} /> Sign in
