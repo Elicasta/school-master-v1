@@ -74,9 +74,11 @@ export function DebateRunner({ opponent }: { opponent: DebateOpponent }) {
         <BackLink />
         <h1 className="font-display text-3xl mb-3">{opponent.label}</h1>
         <p className="text-ink-soft">
-          This opponent's argument trees ship in the next pass. Trinitarian is fully built and ready now.
+          This opponent's argument trees ship in the next pass, the original spec never defined a
+          topic list for it. Six opponents are fully built and ready now: Trinitarian, Murray,
+          Jehovah's Witness, Mormon, Muslim, and Jewish Monotheist.
         </p>
-        <Link href="/debate/trinitarian" className="btn-primary inline-flex mt-6">Debate the Trinitarian instead</Link>
+        <Link href="/debate" className="btn-primary inline-flex mt-6">Pick a ready opponent</Link>
       </div>
     );
   }

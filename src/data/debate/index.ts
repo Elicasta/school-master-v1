@@ -1,47 +1,28 @@
 import { DebateOpponent, OpponentType } from "@/types";
 import { trinitarian } from "./trinitarian";
+import { murray } from "./murray";
+import { jehovahsWitness } from "./jehovahs-witness";
+import { mormon } from "./mormon";
+import { muslim } from "./muslim";
+import { jewishMonotheist } from "./jewish-monotheist";
 
-// Lake 1 ships one opponent with a complete, real argument tree: Trinitarian.
-// The other nine are registered now (so nav, routing, and the DB schema never
-// need to change) but their .topics arrays are empty until Lake 2 builds real
-// trees for each. The UI must show "Coming in the next pass" rather than fake
-// placeholder debate content, per the no-stub rule.
+// Lake 1 shipped Trinitarian. Lake 2 adds the five opponents whose topic lists were
+// spelled out in the original spec (Murray, JW, Mormon, Muslim, Jewish Monotheist),
+// each with a real, graded argument for every named topic. The remaining three
+// (Secular Critic, Modalism Accuser, Church History Challenger) plus the Apostolic
+// Oneness practice mode never had topic lists defined in the spec, so their trees
+// stay empty and honestly labeled "next pass" rather than improvised.
 export const DEBATE_OPPONENTS: Record<OpponentType, DebateOpponent> = {
   trinitarian,
+  murray,
+  "jehovahs-witness": jehovahsWitness,
+  mormon,
+  muslim,
+  "jewish-monotheist": jewishMonotheist,
   "apostolic-oneness": {
     type: "apostolic-oneness",
     label: "Apostolic Oneness",
     description: "Practice mode: argue the Oneness position against a peer for sharpening, not correction.",
-    topics: [],
-  },
-  murray: {
-    type: "murray",
-    label: "Murray / Doctrine of Christ",
-    description: "Distinguishes Father and Son as two eternal, separate divine beings sharing one purpose, not one being.",
-    topics: [],
-  },
-  "jehovahs-witness": {
-    type: "jehovahs-witness",
-    label: "Jehovah's Witness",
-    description: "Argues Jesus is Michael the archangel, God's first creation, not co-eternal deity.",
-    topics: [],
-  },
-  mormon: {
-    type: "mormon",
-    label: "Mormon",
-    description: "Argues God was once a man, exaltation theology, and Jesus and Lucifer as spirit brothers.",
-    topics: [],
-  },
-  muslim: {
-    type: "muslim",
-    label: "Muslim",
-    description: "Argues strict tawhid, Jesus as prophet only, and rejects the crucifixion and Trinity.",
-    topics: [],
-  },
-  "jewish-monotheist": {
-    type: "jewish-monotheist",
-    label: "Jewish Monotheist",
-    description: "Argues the Messiah is not divine, from within Second Temple and rabbinic monotheism.",
     topics: [],
   },
   "secular-critic": {

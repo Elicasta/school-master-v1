@@ -6,7 +6,6 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { LANE_LIST, FUTURE_LANES } from "../src/data/lanes";
-import { trinitarian } from "../src/data/debate/trinitarian";
 import { DEBATE_OPPONENTS } from "../src/data/debate";
 import { CHURCH_FATHERS } from "../src/data/facts/church-fathers";
 import { DOCTRINE_COMPARISONS, TIMELINE } from "../src/data/facts/doctrine-comparisons";
@@ -86,16 +85,19 @@ async function seedDebate() {
     });
   }
 
-  // Only Trinitarian has real trees in Lake 1
-  for (const topic of trinitarian.topics) {
-    await supabase.from("debate_topics").upsert({
-      slug: topic.slug,
-      opponent_type: "trinitarian",
-      title: topic.title,
-    });
-    await seedNode(topic.slug, topic.tree, null, null);
+  let totalTopics = 0;
+  for (const opp of Object.values(DEBATE_OPPONENTS)) {
+    for (const topic of opp.topics) {
+      await supabase.from("debate_topics").upsert({
+        slug: topic.slug,
+        opponent_type: opp.type,
+        title: topic.title,
+      });
+      await seedNode(topic.slug, topic.tree, null, null);
+      totalTopics += 1;
+    }
   }
-  console.log(`Seeded ${trinitarian.topics.length} Trinitarian debate trees.`);
+  console.log(`Seeded ${totalTopics} debate trees across ${Object.values(DEBATE_OPPONENTS).filter((o) => o.topics.length > 0).length} opponents.`);
 }
 
 async function seedNode(topicSlug: string, node: DebateNode, parentId: string | null, parentChoiceKey: string | null) {

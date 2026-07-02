@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Send } from "lucide-react";
+import { ArrowLeft, Send, Wifi } from "lucide-react";
 import { OPPONENT_LIST } from "@/data/debate";
 import { OpponentType } from "@/types";
 
@@ -15,6 +15,22 @@ export function AIDebateClient() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<string | null>(null);
+
+  async function checkConnection() {
+    setChecking(true);
+    setCheckResult(null);
+    try {
+      const res = await fetch("/api/debate/gemini/status");
+      const data = await res.json();
+      setCheckResult(data.ok ? "Connected. Gemini responded correctly." : `Not working: ${data.reason}`);
+    } catch {
+      setCheckResult("Not working: network error reaching the status endpoint.");
+    } finally {
+      setChecking(false);
+    }
+  }
 
   async function send() {
     if (!input.trim()) return;
@@ -56,7 +72,16 @@ export function AIDebateClient() {
       </Link>
 
       <p className="eyebrow mb-1">AI Debate Mode &middot; Gemini</p>
-      <h1 className="font-display text-3xl mb-6">Dynamic sparring.</h1>
+      <h1 className="font-display text-3xl mb-3">Dynamic sparring.</h1>
+
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={checkConnection} disabled={checking} className="btn-secondary text-xs py-2">
+          <Wifi size={13} /> {checking ? "Checking..." : "Check connection"}
+        </button>
+        {checkResult && (
+          <p className={`text-xs ${checkResult.startsWith("Connected") ? "text-slate" : "text-rose"}`}>{checkResult}</p>
+        )}
+      </div>
 
       <div className="grid sm:grid-cols-2 gap-3 mb-6">
         <select value={opponentType} onChange={(e) => setOpponentType(e.target.value as OpponentType)} className="border border-line rounded-lg px-3 py-2 text-sm bg-white">

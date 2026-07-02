@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { getOpponent } from "@/data/debate";
 import { LANE_LIST } from "@/data/lanes";
 
@@ -11,6 +11,12 @@ interface DebateRequestBody {
   history: { role: "user" | "opponent"; content: string }[];
   userMessage: string;
 }
+
+// "gemini-flash-latest" is a Google-managed alias that auto-updates to the current
+// stable Flash model. Pinning to a dated model string (e.g. gemini-1.5-flash) is
+// what broke this route last time, Google shut that model down entirely. The alias
+// exists specifically to prevent that class of bug from recurring here.
+const MODEL = "gemini-flash-latest";
 
 function buildSystemPrompt(opponentLabel: string, opponentDescription: string, topic: string | undefined): string {
   const verseIndex = LANE_LIST.flatMap((lane) =>
@@ -39,35 +45,67 @@ export async function POST(req: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "AI Debate Mode is not configured. Add GEMINI_API_KEY to your environment to enable it. Offline Debate Mode works without this." },
+      {
+        error:
+          "GEMINI_API_KEY is not set on the server. If you already added it in Vercel, redeploy after saving env vars, they don't apply to a build that already ran. Offline Debate Mode works without this.",
+      },
       { status: 503 },
     );
   }
 
-  const body = (await req.json()) as DebateRequestBody;
-  const opponent = getOpponent(body.opponentType);
-  if (!opponent) {
-    return NextResponse.json({ error: "Unknown opponent type." }, { status: 400 });
+  let body: DebateRequestBody;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Malformed request body." }, { status: 400 });
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
-    systemInstruction: buildSystemPrompt(opponent.label, opponent.description, body.topic),
-  });
-
-  const history = body.history.map((h) => ({
-    role: h.role === "user" ? "user" : "model",
-    parts: [{ text: h.content }],
-  }));
+  const opponent = getOpponent(body.opponentType);
+  if (!opponent) {
+    return NextResponse.json({ error: `Unknown opponent type: ${body.opponentType}` }, { status: 400 });
+  }
+  if (!body.userMessage?.trim()) {
+    return NextResponse.json({ error: "Empty message." }, { status: 400 });
+  }
 
   try {
-    const chat = model.startChat({ history });
-    const result = await chat.sendMessage(body.userMessage);
-    const text = result.response.text();
+    const ai = new GoogleGenAI({ apiKey });
+
+    const chat = ai.chats.create({
+      model: MODEL,
+      config: {
+        systemInstruction: buildSystemPrompt(opponent.label, opponent.description, body.topic),
+      },
+      history: (body.history ?? []).map((h) => ({
+        role: h.role === "user" ? "user" : "model",
+        parts: [{ text: h.content }],
+      })),
+    });
+
+    const result = await chat.sendMessage({ message: body.userMessage });
+    const text = result.text;
+
+    if (!text) {
+      return NextResponse.json({ error: "Gemini returned an empty response. Try again." }, { status: 502 });
+    }
+
     return NextResponse.json({ reply: text });
-  } catch (err) {
+  } catch (err: any) {
+    // Surface the real cause instead of a generic failure, this is the #1 thing
+    // that makes "AI Debate Mode isn't working" reports impossible to debug.
     console.error("Gemini debate error:", err);
-    return NextResponse.json({ error: "AI Debate Mode failed to respond. Try Offline Debate Mode instead." }, { status: 502 });
+    const message: string = err?.message ?? "Unknown error";
+
+    if (message.includes("API key not valid") || message.includes("API_KEY_INVALID")) {
+      return NextResponse.json({ error: "GEMINI_API_KEY is set but invalid. Generate a fresh key at aistudio.google.com/app/apikey." }, { status: 401 });
+    }
+    if (message.includes("404") || message.toLowerCase().includes("not found")) {
+      return NextResponse.json({ error: `Model "${MODEL}" was not found or not available for this key/region. Try again, or check ai.google.dev/gemini-api/docs/models for the current model list.` }, { status: 502 });
+    }
+    if (message.includes("429") || message.toLowerCase().includes("quota") || message.toLowerCase().includes("rate limit")) {
+      return NextResponse.json({ error: "Gemini rate limit or quota exceeded for this key. Wait a moment and try again." }, { status: 429 });
+    }
+
+    return NextResponse.json({ error: `AI Debate Mode failed: ${message}. Offline Debate Mode still works.` }, { status: 502 });
   }
 }

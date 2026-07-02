@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { LANE_LIST, getLane } from "@/data/lanes";
 import { DrillLevel, DrillQuestion, LaneSlug } from "@/types";
 import { getScores, saveScores, logReviewEvent } from "@/lib/local-store";
 import { applyDrillResult, recordWeakVerse } from "@/lib/scoring";
-import { Check, X, Timer } from "lucide-react";
+import { Check, X, Timer, ArrowRight } from "lucide-react";
 
 export function DrillClient() {
   const params = useSearchParams();
@@ -16,35 +16,46 @@ export function DrillClient() {
   const [level, setLevel] = useState<DrillLevel>(1);
   const [queue, setQueue] = useState<DrillQuestion[]>([]);
   const [index, setIndex] = useState(0);
-  const [revealed, setRevealed] = useState(false);
+  const [revealed, setRevealed] = useState(false); // true once graded (MC: immediate, free-response: after self-grade)
+  const [answerShown, setAnswerShown] = useState(false); // free-response only: model answer shown pre-grade
   const [userAnswer, setUserAnswer] = useState("");
   const [sessionCorrect, setSessionCorrect] = useState(0);
   const [sessionTotal, setSessionTotal] = useState(0);
   const [missed, setMissed] = useState<DrillQuestion[]>([]);
+  const [leveledUp, setLeveledUp] = useState(false);
+  const autoAdvanceTimer = useRef<number | null>(null);
 
   const lane = getLane(laneSlug)!;
 
   useEffect(() => {
+    if (autoAdvanceTimer.current !== null) {
+      window.clearTimeout(autoAdvanceTimer.current);
+      autoAdvanceTimer.current = null;
+    }
     const qs = lane.drillQuestions.filter((q) => q.level === level);
     setQueue(qs.length > 0 ? qs : lane.drillQuestions.filter((q) => q.level === 1));
     setIndex(0);
     setRevealed(false);
+    setAnswerShown(false);
     setUserAnswer("");
+    setLeveledUp(false);
   }, [laneSlug, level]);
 
   const current = queue[index];
 
   function grade(correct: boolean) {
     setRevealed(true);
-    setSessionTotal((t) => t + 1);
-    if (correct) setSessionCorrect((c) => c + 1);
+    const newTotal = sessionTotal + 1;
+    const newCorrect = sessionCorrect + (correct ? 1 : 0);
+    setSessionTotal(newTotal);
+    if (correct) setSessionCorrect(newCorrect);
     else setMissed((m) => [...m, current]);
 
     const scores = getScores();
-    const pct = sessionTotal > 0 ? Math.round(((sessionCorrect + (correct ? 1 : 0)) / (sessionTotal + 1)) * 100) : 100;
-    let next = applyDrillResult(scores, laneSlug, correct, pct, null);
-    if (!correct && current.verseId) next = recordWeakVerse(next, current.verseId);
-    saveScores(next);
+    const pct = Math.round((newCorrect / newTotal) * 100);
+    let updatedScores = applyDrillResult(scores, laneSlug, correct, pct, null);
+    if (!correct && current.verseId) updatedScores = recordWeakVerse(updatedScores, current.verseId);
+    saveScores(updatedScores);
     logReviewEvent({
       id: `${current.id}-${Date.now()}`,
       kind: "drill",
@@ -55,16 +66,30 @@ export function DrillClient() {
     });
 
     // Difficulty progression: two strong sessions (>=85%) bump the level
-    if (correct && pct >= 85 && sessionTotal >= 4 && level < 7) {
-      setTimeout(() => setLevel((l) => (Math.min(7, l + 1) as DrillLevel)), 600);
-    }
+    const shouldLevelUp = correct && pct >= 85 && newTotal >= 4 && level < 7;
+    if (shouldLevelUp) setLeveledUp(true);
+
+    // Auto-advance to the next question after a short beat so the person can read
+    // the feedback first. No manual click required to keep moving.
+    autoAdvanceTimer.current = window.setTimeout(() => {
+      goToNext(shouldLevelUp);
+    }, 1100);
   }
 
-  function next() {
+  function goToNext(bumpLevel: boolean) {
+    if (autoAdvanceTimer.current !== null) {
+      window.clearTimeout(autoAdvanceTimer.current);
+      autoAdvanceTimer.current = null;
+    }
     setRevealed(false);
+    setAnswerShown(false);
     setUserAnswer("");
-    if (index + 1 < queue.length) setIndex(index + 1);
-    else setIndex(0);
+    setLeveledUp(false);
+    if (bumpLevel) {
+      setLevel((l) => (Math.min(7, l + 1) as DrillLevel));
+      return; // level change resets the queue via the effect above
+    }
+    setIndex((i) => (i + 1 < queue.length ? i + 1 : 0));
   }
 
   if (!current) {
@@ -131,20 +156,22 @@ export function DrillClient() {
             <textarea
               value={userAnswer}
               onChange={(e) => setUserAnswer(e.target.value)}
-              disabled={revealed}
+              disabled={answerShown}
               placeholder="Type your answer, then reveal to self-grade..."
               className="w-full text-sm border border-line rounded-xl px-4 py-3 bg-white min-h-[80px]"
             />
-            {!revealed ? (
-              <button onClick={() => setRevealed(true)} className="btn-secondary text-sm">Reveal answer</button>
+            {!answerShown ? (
+              <button onClick={() => setAnswerShown(true)} className="btn-secondary text-sm">Reveal answer</button>
             ) : (
               <div className="paper-card p-4 bg-paper-dim">
                 <p className="text-xs font-mono uppercase text-ink-faint mb-1">Model answer</p>
                 <p className="text-sm">{current.answer}</p>
-                <div className="flex gap-2 mt-3">
-                  <button onClick={() => grade(true)} className="btn-primary text-sm py-2 px-4"><Check size={14} /> I had it</button>
-                  <button onClick={() => grade(false)} className="btn-secondary text-sm py-2 px-4"><X size={14} /> Missed it</button>
-                </div>
+                {!revealed && (
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => grade(true)} className="btn-primary text-sm py-2 px-4"><Check size={14} /> I had it</button>
+                    <button onClick={() => grade(false)} className="btn-secondary text-sm py-2 px-4"><X size={14} /> Missed it</button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -152,7 +179,9 @@ export function DrillClient() {
       </div>
 
       {revealed && (
-        <button onClick={next} className="btn-primary w-full">Next question</button>
+        <button onClick={() => goToNext(leveledUp)} className="btn-primary w-full flex items-center justify-center gap-2">
+          {leveledUp ? `Level up! Continue to Level ${Math.min(7, level + 1)}` : "Next question"} <ArrowRight size={14} />
+        </button>
       )}
 
       {missed.length > 0 && (
