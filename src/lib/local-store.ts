@@ -11,7 +11,25 @@ const KEYS = {
   memoryCards: "sm_memory_cards",
   palaces: "sm_mind_palaces",
   events: "sm_review_events",
+  transcripts: "sm_transcripts",
 } as const;
+
+export interface DebateMessage {
+  role: "user" | "opponent";
+  content: string;
+}
+
+export interface DebateTranscript {
+  id: string;
+  mode: "ai" | "browser-ai";
+  opponentType: string;
+  opponentLabel: string;
+  topic?: string;
+  messages: DebateMessage[];
+  startedAt: string;
+  updatedAt: string;
+  syncedToCloud: boolean;
+}
 
 function read<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -88,4 +106,51 @@ export function logReviewEvent(event: ReviewEvent) {
 
 export function getReviewEvents(): ReviewEvent[] {
   return read<ReviewEvent[]>(KEYS.events, []);
+}
+
+// ---------- Debate transcripts ----------
+// Always saved locally, zero setup required. Synced to Supabase in the background
+// when the person is signed in (see saveTranscriptCloud in AuthWidget usage sites).
+
+export function getTranscripts(): DebateTranscript[] {
+  return read<DebateTranscript[]>(KEYS.transcripts, []).sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+}
+
+export function getTranscript(id: string): DebateTranscript | undefined {
+  return getTranscripts().find((t) => t.id === id);
+}
+
+export function saveTranscript(t: DebateTranscript) {
+  const all = read<DebateTranscript[]>(KEYS.transcripts, []);
+  const idx = all.findIndex((x) => x.id === t.id);
+  if (idx >= 0) all[idx] = t;
+  else all.push(t);
+  write(KEYS.transcripts, all.slice(-100)); // cap local history at 100 transcripts
+}
+
+export function deleteTranscript(id: string) {
+  const all = read<DebateTranscript[]>(KEYS.transcripts, []);
+  write(KEYS.transcripts, all.filter((t) => t.id !== id));
+}
+
+// Draft key per mode+opponent, so a live in-progress chat survives navigating away
+// and back (the "chat disappears" bug) without polluting the saved-transcript list
+// until the person actually hits Save.
+export function getDraftKey(mode: "ai" | "browser-ai", opponentType: string): string {
+  return `sm_draft_${mode}_${opponentType}`;
+}
+
+export function getDraft(mode: "ai" | "browser-ai", opponentType: string): DebateMessage[] {
+  return read<DebateMessage[]>(getDraftKey(mode, opponentType), []);
+}
+
+export function saveDraft(mode: "ai" | "browser-ai", opponentType: string, messages: DebateMessage[]) {
+  write(getDraftKey(mode, opponentType), messages);
+}
+
+export function clearDraft(mode: "ai" | "browser-ai", opponentType: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(getDraftKey(mode, opponentType));
 }

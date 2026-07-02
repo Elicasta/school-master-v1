@@ -65,18 +65,19 @@ export function DrillClient() {
       createdAt: new Date().toISOString(),
     });
 
-    // Difficulty progression: two strong sessions (>=85%) bump the level
-    const shouldLevelUp = correct && pct >= 85 && newTotal >= 4 && level < 7;
-    if (shouldLevelUp) setLeveledUp(true);
+    // Difficulty signal: a strong session (>=85%, at least 4 questions) earns a
+    // "leveled up" badge on this feedback screen. It doesn't gate advancement,
+    // since each level currently has one question, advancement is automatic
+    // either way, this just tells the person they're doing well.
+    const earnedLevelUp = correct && pct >= 85 && newTotal >= 4;
+    setLeveledUp(earnedLevelUp);
 
-    // Auto-advance to the next question after a short beat so the person can read
-    // the feedback first. No manual click required to keep moving.
-    autoAdvanceTimer.current = window.setTimeout(() => {
-      goToNext(shouldLevelUp);
-    }, 1100);
+    // Auto-advance after a short beat so the person can read the feedback first.
+    // No manual click required, but the button below lets them skip the wait.
+    autoAdvanceTimer.current = window.setTimeout(() => goToNext(), 1100);
   }
 
-  function goToNext(bumpLevel: boolean) {
+  function goToNext() {
     if (autoAdvanceTimer.current !== null) {
       window.clearTimeout(autoAdvanceTimer.current);
       autoAdvanceTimer.current = null;
@@ -85,11 +86,15 @@ export function DrillClient() {
     setAnswerShown(false);
     setUserAnswer("");
     setLeveledUp(false);
-    if (bumpLevel) {
-      setLevel((l) => (Math.min(7, l + 1) as DrillLevel));
-      return; // level change resets the queue via the effect above
+    // Each (lane, level) ships one question today, so finishing it always means
+    // moving to the next level (looping 7 back to 1), not resetting to the same
+    // question, that reset was the actual bug behind "next question does nothing."
+    const hasMoreInQueue = index + 1 < queue.length;
+    if (hasMoreInQueue) {
+      setIndex((i) => i + 1);
+    } else {
+      setLevel((l) => (l >= 7 ? 1 : ((l + 1) as DrillLevel)));
     }
-    setIndex((i) => (i + 1 < queue.length ? i + 1 : 0));
   }
 
   if (!current) {
@@ -105,9 +110,15 @@ export function DrillClient() {
         </div>
         <div className="text-right">
           <p className="text-xs text-ink-faint font-mono">Level {level} / 7</p>
-          <p className="text-xs text-ink-faint font-mono">{sessionCorrect}/{sessionTotal} correct</p>
+          <p className="text-xs text-ink-faint font-mono">{sessionCorrect}/{sessionTotal} correct &middot; {missed.length} missed</p>
         </div>
       </div>
+
+      {leveledUp && (
+        <div className="mb-4 text-xs font-mono px-3 py-2 rounded-lg bg-gold-dim text-gold inline-block">
+          Strong session, {sessionCorrect}/{sessionTotal} correct
+        </div>
+      )}
 
       <div className="flex gap-2 mb-6 flex-wrap">
         <select
@@ -179,8 +190,8 @@ export function DrillClient() {
       </div>
 
       {revealed && (
-        <button onClick={() => goToNext(leveledUp)} className="btn-primary w-full flex items-center justify-center gap-2">
-          {leveledUp ? `Level up! Continue to Level ${Math.min(7, level + 1)}` : "Next question"} <ArrowRight size={14} />
+        <button onClick={() => goToNext()} className="btn-primary w-full flex items-center justify-center gap-2">
+          Continue now <ArrowRight size={14} />
         </button>
       )}
 

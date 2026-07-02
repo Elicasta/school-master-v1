@@ -1,11 +1,16 @@
 import Link from "next/link";
-import { Sparkles, MonitorSmartphone } from "lucide-react";
+import { Sparkles, MonitorSmartphone, History } from "lucide-react";
 import { OPPONENT_LIST } from "@/data/debate";
 
 export default function DebateOpponentsPage() {
   return (
     <div className="px-5 py-8 md:px-10 md:py-10 max-w-4xl mx-auto">
-      <p className="eyebrow mb-2">Debate Mode</p>
+      <div className="flex items-center justify-between mb-2">
+        <p className="eyebrow">Debate Mode</p>
+        <Link href="/debate/history" className="inline-flex items-center gap-1.5 text-xs text-ink-faint hover:text-ink">
+          <History size={13} /> History
+        </Link>
+      </div>
       <h1 className="font-display text-3xl md:text-4xl mb-2">Pick your opponent.</h1>
       <p className="text-ink-soft mb-6 max-w-xl">
         One opponent at a time, organized by topic so you're never debating everyone at once.

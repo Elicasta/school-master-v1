@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BookOpen, LayoutGrid, Zap, Brain, Swords, Landmark, Library } from "lucide-react";
+import { AuthWidget } from "@/components/AuthWidget";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutGrid },
@@ -19,7 +20,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen md:flex">
-      <aside className="hidden md:flex md:w-60 md:flex-col md:border-r md:border-line md:bg-paper-dim/40 md:px-4 md:py-8">
+      <aside className="hidden md:flex md:w-60 md:flex-col md:min-h-screen md:border-r md:border-line md:bg-paper-dim/40 md:px-4 md:py-8">
         <div className="px-2 mb-10">
           <span className="font-display text-xl tracking-tight">School Master</span>
         </div>
@@ -41,11 +42,15 @@ export function NavShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
+        <div className="mt-auto pt-6 border-t border-line">
+          <AuthWidget />
+        </div>
       </aside>
 
       <div className="flex-1 min-w-0">
-        <header className="md:hidden sticky top-0 z-30 bg-paper/90 backdrop-blur-xs border-b border-line px-4 py-3">
+        <header className="md:hidden sticky top-0 z-30 bg-paper/90 backdrop-blur-xs border-b border-line px-4 py-3 flex items-center justify-between">
           <span className="font-display text-lg">School Master</span>
+          <AuthWidget compact />
         </header>
 
         <main className="pb-24 md:pb-10">{children}</main>

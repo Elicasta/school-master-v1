@@ -84,7 +84,20 @@ npm install
 npm run seed
 ```
 
-### 3. Gemini (optional)
+### 3. Supabase Auth (needed for cloud sync of debate transcripts)
+
+Magic-link email sign-in is already wired up (`AuthWidget`, `/auth/callback`), but two
+things need to be true in your Supabase project for it to work:
+
+1. **Email auth enabled** — Authentication → Providers → Email, on by default on a new project.
+2. **Redirect URL allowed** — Authentication → URL Configuration → Redirect URLs, add
+   `http://localhost:3000/auth/callback` for local dev and
+   `https://your-vercel-domain.vercel.app/auth/callback` for production.
+
+Without step 2, the magic link will redirect but fail to complete sign-in. Debate
+transcripts always save locally regardless, cloud sync is additive, not required.
+
+### 4. Gemini (optional)
 
 Get a key at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey), add it as
 `GEMINI_API_KEY`. Without it, AI Debate Mode shows a clear message and Offline Debate Mode keeps
@@ -94,13 +107,13 @@ it tells you the exact reason (key not set, key invalid, model unavailable, rate
 most common cause: adding the env var in Vercel without redeploying, Vercel only applies new env
 vars to builds that run after they're saved.
 
-### 4. Browser AI Mode (optional, no setup)
+### 5. Browser AI Mode (optional, no setup)
 
 Works automatically in desktop Chrome if the device meets Chrome's on-device AI requirements
 (~22GB free disk, 4GB+ VRAM or 16GB+ RAM). Nothing to configure, the app detects it and offers the
 download inline.
 
-### 5. Environment variables
+### 6. Environment variables
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=
@@ -109,13 +122,13 @@ SUPABASE_SERVICE_ROLE_KEY=
 GEMINI_API_KEY=
 ```
 
-### 6. Run locally
+### 7. Run locally
 
 ```bash
 npm run dev
 ```
 
-### 7. Deploy to Vercel
+### 8. Deploy to Vercel
 
 1. Push this repo to GitHub.
 2. Import it in Vercel.
@@ -165,4 +178,29 @@ scripts/
   practice mode, once topic lists are defined for each.
 - **Lake 4**: the 30 expandable doctrine lanes, fully populated.
 - **Lake 5**: remaining facts library depth (full timeline detail, more church fathers).
+
+## Changelog
+
+**This pass (bug fixes + AI Debate quality-of-life):**
+- Markdown now actually renders in AI Debate and Browser AI chat (bold/italics/bullets), instead
+  of showing raw `**asterisks**`.
+- Drill Mode auto-advances after grading (fixed in the prior pass, confirmed working).
+- Fixed AI Debate Mode being broken: swapped the dead `@google/generative-ai` SDK and shut-down
+  `gemini-1.5-flash` model for `@google/genai` + the `gemini-flash-latest` alias, added a "Check
+  connection" diagnostic.
+- **Fixed Browser AI Mode going blank on repeat visits** — the component had no UI branch at all
+  for "model already downloaded" (`available` status), only for `downloadable`/`downloading`, so
+  it silently rendered nothing. Now handles all statuses and auto-starts the session when the
+  model's already there.
+- Browser AI Mode now matches AI Debate Mode's layout: opponent selector, topic lock, same chat
+  shell, not a separate flow.
+- In-progress debates (both AI and Browser AI) now survive navigating away and back, drafts save
+  to localStorage per opponent and restore on return.
+- Added a turn counter and elapsed timer to both AI modes, with a moderator step-in at 8 user
+  turns (configurable in code via `MAX_TURNS`) that asks the model for a final scored verdict
+  instead of letting debates sprawl indefinitely.
+- Added debate transcript saving: always local (zero setup), synced to Supabase when signed in via
+  a lightweight email magic-link widget. New `/debate/history` page to browse and re-read saved
+  transcripts.
+- Drill Mode now shows missed count live next to correct count, not just at the end.
 
