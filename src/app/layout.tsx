@@ -1,18 +1,16 @@
-import type { Metadata } from "next";
-import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { NavShell } from "@/components/NavShell";
 import { AuthCodeHandler } from "@/components/AuthCodeHandler";
 
-const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-fraunces", weight: ["400", "500", "600"] });
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-const plexMono = IBM_Plex_Mono({ subsets: ["latin"], variable: "--font-plex-mono", weight: ["400", "500"] });
+export const viewport: Viewport = {
+  themeColor: "#F5F3EE",
+};
 
 export const metadata: Metadata = {
   title: "School Master",
   description: "Scripture study, doctrine mastery, and debate prep.",
   manifest: "/manifest.json",
-  themeColor: "#F5F3EE",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -22,7 +20,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${inter.variable} ${plexMono.variable}`}>
+    <html lang="en">
       <head>
         <script
           dangerouslySetInnerHTML={{

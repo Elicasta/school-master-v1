@@ -65,6 +65,9 @@ function cloudCardToLocal(row: any): MemoryCard {
     nextReview: row.next_review,
     correctCount: row.correct_count ?? 0,
     missCount: row.miss_count ?? 0,
+    cardKind: row.card_kind ?? undefined,
+    source: row.source ?? undefined,
+    weaknessTag: row.weakness_tag ?? undefined,
   };
 }
 
@@ -76,6 +79,9 @@ function cloudEventToLocal(row: any): ReviewEvent {
     laneSlug: row.lane_slug,
     correct: row.correct,
     grade: row.grade,
+    responseMs: row.response_ms ?? undefined,
+    confidence: row.confidence ?? undefined,
+    mode: row.mode ?? undefined,
     createdAt: row.created_at,
   };
 }
@@ -138,6 +144,9 @@ export async function syncTrainingState(): Promise<{ ok: boolean; message: strin
     next_review: c.nextReview,
     correct_count: c.correctCount,
     miss_count: c.missCount,
+    card_kind: c.cardKind ?? null,
+    source: c.source ?? null,
+    weakness_tag: c.weaknessTag ?? null,
   }));
 
   const eventRows = mergedEvents.map((e) => ({
@@ -147,7 +156,10 @@ export async function syncTrainingState(): Promise<{ ok: boolean; message: strin
     ref_id: e.refId,
     lane_slug: e.laneSlug,
     correct: e.correct,
-    grade: e.grade,
+    grade: e.grade ?? null,
+    response_ms: e.responseMs ?? null,
+    confidence: e.confidence ?? null,
+    mode: e.mode ?? null,
     created_at: e.createdAt,
   }));
 

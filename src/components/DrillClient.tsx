@@ -29,6 +29,7 @@ export function DrillClient() {
   const [adaptiveCard, setAdaptiveCard] = useState<any | null>(null);
   const [adaptiveCardAdded, setAdaptiveCardAdded] = useState(false);
   const autoAdvanceTimer = useRef<number | null>(null);
+  const questionStartedAt = useRef(Date.now());
 
   const lane = getLane(laneSlug)!;
 
@@ -44,6 +45,7 @@ export function DrillClient() {
     setAnswerShown(false);
     setUserAnswer("");
     setLeveledUp(false);
+    questionStartedAt.current = Date.now();
   }, [laneSlug, level]);
 
   const current = queue[index];
@@ -87,6 +89,7 @@ export function DrillClient() {
       setAnswerShown(false);
       setUserAnswer("");
       setAdaptiveCard(data.memoryCard ?? null);
+      questionStartedAt.current = Date.now();
     } catch (err: any) {
       setAdaptiveError(err?.message ?? "Adaptive drill failed.");
     } finally {
@@ -118,6 +121,7 @@ export function DrillClient() {
       refId: current.id,
       laneSlug,
       correct,
+      responseMs: Date.now() - questionStartedAt.current,
       createdAt: new Date().toISOString(),
     });
 
@@ -137,6 +141,9 @@ export function DrillClient() {
         nextReview: new Date().toISOString(),
         correctCount: 0,
         missCount: 1,
+        source: "adaptive",
+        cardKind: "objection",
+        weaknessTag: `drill:${laneSlug}`,
       });
       setAdaptiveCardAdded(true);
     }
@@ -162,6 +169,7 @@ export function DrillClient() {
     setAnswerShown(false);
     setUserAnswer("");
     setLeveledUp(false);
+    questionStartedAt.current = Date.now();
     // Each (lane, level) ships one question today, so finishing it always means
     // moving to the next level (looping 7 back to 1), not resetting to the same
     // question, that reset was the actual bug behind "next question does nothing."

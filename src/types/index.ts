@@ -113,6 +113,8 @@ export interface DebateNode {
 
 // ---------- Memory / spaced repetition ----------
 
+export type MemoryCardKind = "verse" | "objection" | "trap" | "cross-exam" | "definition" | "recovery" | "rewrite";
+
 export interface MemoryCard {
   id: string;
   laneSlug: LaneSlug;
@@ -128,6 +130,9 @@ export interface MemoryCard {
   nextReview: string; // ISO date
   correctCount: number;
   missCount: number;
+  cardKind?: MemoryCardKind;
+  source?: "seed" | "adaptive" | "debate" | "manual";
+  weaknessTag?: string;
 }
 
 export type ReviewGrade = 0 | 1 | 2 | 3 | 4 | 5; // SM-2 quality score
@@ -209,10 +214,13 @@ export interface UserScores {
 
 export interface ReviewEvent {
   id: string;
-  kind: "drill" | "memory" | "debate" | "mind-palace";
+  kind: "drill" | "memory" | "debate" | "mind-palace" | "coach";
   refId: string; // verseId, questionId, nodeId, etc.
   laneSlug: LaneSlug | null;
   correct: boolean;
   grade?: ReviewGrade;
+  responseMs?: number;
+  confidence?: 1 | 2 | 3 | 4 | 5;
+  mode?: string;
   createdAt: string;
 }

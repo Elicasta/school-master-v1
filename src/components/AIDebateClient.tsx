@@ -8,8 +8,9 @@ import { LANE_LIST } from "@/data/lanes";
 import { OpponentType } from "@/types";
 import { MarkdownLite } from "@/components/MarkdownLite";
 import { AuthWidget } from "@/components/AuthWidget";
-import { getDraft, saveDraft, clearDraft, DebateMessage, getScores, getReviewEvents } from "@/lib/local-store";
+import { getDraft, saveDraft, clearDraft, DebateMessage, getScores, getReviewEvents, logReviewEvent } from "@/lib/local-store";
 import { persistTranscript } from "@/lib/persist-transcript";
+import { buildWeaknessPayload } from "@/lib/adaptive-engine";
 
 const MAX_TURNS = 8;
 const MODERATOR_PROMPT =
@@ -30,29 +31,13 @@ export function AIDebateClient() {
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [debateMode, setDebateMode] = useState<"moderated" | "infinite">("moderated");
   const [showCoaching, setShowCoaching] = useState(false);
+  const [difficulty, setDifficulty] = useState<1 | 2 | 3 | 4 | 5>(3);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(crypto.randomUUID());
 
   const userTurns = messages.filter((m) => m.role === "user").length;
 
-  const trainingProfile = useMemo(() => {
-    const scores = getScores();
-    const weakLanes = LANE_LIST
-      .map((l) => ({ slug: l.slug, title: l.title, mastery: scores.laneMastery[l.slug] ?? 0 }))
-      .sort((a, b) => a.mastery - b.mastery)
-      .slice(0, 4)
-      .map((l) => `${l.title} (${l.mastery}%)`);
-    const misses = getReviewEvents()
-      .filter((e) => e.correct === false)
-      .slice(-8)
-      .map((e) => `${e.kind}:${e.refId}`);
-    return {
-      weakLanes,
-      weakVerseIds: scores.weakVerseIds.slice(-12),
-      weakObjectionIds: scores.weakObjectionIds.slice(-12),
-      recentMisses: misses,
-    };
-  }, [messages.length]);
+  const trainingProfile = useMemo(() => buildWeaknessPayload(), [messages.length]);
 
   useEffect(() => {
     const draft = getDraft("ai", opponentType);
@@ -108,6 +93,7 @@ export function AIDebateClient() {
           userMessage: userMsg.content,
           coachMode: showCoaching ? "visible" : "hidden",
           userProfile: trainingProfile,
+          difficulty,
         }),
       });
       const data = await res.json();
@@ -122,6 +108,16 @@ export function AIDebateClient() {
           createdAt: new Date().toISOString(),
         };
         setMessages([...nextMessages, opponentMsg, coachMsg]);
+        logReviewEvent({
+          id: `debate-${sessionId.current}-${Date.now()}`,
+          kind: "debate",
+          refId: opponentType,
+          laneSlug: null,
+          correct: true,
+          responseMs: Date.now() - new Date(userMsg.createdAt || new Date().toISOString()).getTime(),
+          mode: `ai-level-${difficulty}`,
+          createdAt: new Date().toISOString(),
+        });
         if (isModerator) setModeratorClosed(true);
       }
     } catch {
@@ -217,6 +213,17 @@ export function AIDebateClient() {
           >
             Infinite
           </button>
+          <select
+            value={difficulty}
+            onChange={(e) => setDifficulty(Number(e.target.value) as 1 | 2 | 3 | 4 | 5)}
+            className="text-xs px-3 py-2 rounded-full border border-line bg-surface text-ink-faint"
+          >
+            <option value={1}>Level 1 friendly</option>
+            <option value={2}>Level 2 pastor</option>
+            <option value={3}>Level 3 apologist</option>
+            <option value={4}>Level 4 hostile</option>
+            <option value={5}>Level 5 cross-exam</option>
+          </select>
           <button
             onClick={() => setShowCoaching((v) => !v)}
             className={`text-xs px-3 py-2 rounded-full border inline-flex items-center gap-1.5 ${showCoaching ? "bg-gold text-paper border-gold" : "border-line text-ink-faint"}`}

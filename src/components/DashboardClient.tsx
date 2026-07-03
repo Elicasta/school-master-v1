@@ -1,107 +1,135 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Zap, Brain, Swords, Landmark, Library, ArrowRight } from "lucide-react";
+import { Zap, Brain, Swords, Landmark, Library, ArrowRight, Target, AlertTriangle, Clock } from "lucide-react";
 import { LANE_LIST } from "@/data/lanes";
 import { getMemoryCards, getReviewEvents, getScores, getTranscripts } from "@/lib/local-store";
 import { sortByDue } from "@/lib/spaced-repetition";
-import { UserScores, MemoryCard } from "@/types";
+import { buildAdaptiveProfile } from "@/lib/adaptive-engine";
+import { UserScores, MemoryCard, ReviewEvent } from "@/types";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 
 export function DashboardClient() {
   const [scores, setScores] = useState<UserScores | null>(null);
   const [dueCards, setDueCards] = useState<MemoryCard[]>([]);
-  const [activity, setActivity] = useState({ totalReviews: 0, weekAccuracy: 0, debateSessions: 0, weakMisses: 0 });
+  const [events, setEvents] = useState<ReviewEvent[]>([]);
+  const [debateSessions, setDebateSessions] = useState(0);
 
   useEffect(() => {
-    setScores(getScores());
+    const s = getScores();
     const cards = getMemoryCards();
+    const ev = getReviewEvents();
+    setScores(s);
     setDueCards(sortByDue(cards).filter((c) => new Date(c.nextReview).getTime() <= Date.now()));
-    const events = getReviewEvents();
-    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const weekEvents = events.filter((e) => new Date(e.createdAt).getTime() >= weekAgo && typeof e.correct === "boolean");
-    const correctThisWeek = weekEvents.filter((e) => e.correct).length;
-    setActivity({
-      totalReviews: events.length,
-      weekAccuracy: weekEvents.length ? Math.round((correctThisWeek / weekEvents.length) * 100) : 0,
-      debateSessions: getTranscripts().length,
-      weakMisses: events.filter((e) => e.correct === false).length,
-    });
+    setEvents(ev);
+    setDebateSessions(getTranscripts().length);
   }, []);
 
-  if (!scores) return <div className="p-6 md:p-10 text-ink-faint">Loading...</div>;
+  const profile = useMemo(() => scores ? buildAdaptiveProfile(scores, events, getMemoryCards()) : null, [scores, events]);
 
-  const weakLanes = LANE_LIST
-    .map((l) => ({ slug: l.slug, title: l.title, mastery: scores.laneMastery[l.slug] ?? 0 }))
-    .sort((a, b) => a.mastery - b.mastery)
-    .slice(0, 3);
+  if (!scores || !profile) return <div className="p-6 md:p-10 text-ink-faint">Loading...</div>;
 
   const nextAction = dueCards.length > 0
-    ? { label: `Review ${dueCards.length} due memory card${dueCards.length === 1 ? "" : "s"}`, href: "/memory" }
-    : weakLanes[0]?.mastery < 50
-      ? { label: `Drill ${weakLanes[0].title}`, href: `/drill?lane=${weakLanes[0].slug}` }
-      : { label: "Enter Debate Mode", href: "/debate" };
+    ? { label: `Review ${dueCards.length} due card${dueCards.length === 1 ? "" : "s"}`, href: "/memory", detail: "Memory comes first because weak reps compound if ignored." }
+    : profile.recommendedLane
+      ? { label: `${modeLabel(profile.recommendedMode)} · ${profile.recommendedLane.title}`, href: `/coach`, detail: "The coach picked this from weak lanes, misses, and slow answers." }
+      : { label: "Enter Debate Mode", href: "/debate", detail: "Start a sparring session to create signal." };
+
+  const slowEvents = events.filter((e: any) => Number(e.responseMs ?? 0) >= 14000).length;
+  const misses = events.filter((e) => e.correct === false).length;
 
   return (
     <div className="px-5 py-8 md:px-10 md:py-10 max-w-6xl mx-auto">
       <div className="mb-8">
         <p className="eyebrow mb-2">Today</p>
-        <h1 className="font-display text-3xl md:text-4xl">Welcome back.</h1>
+        <h1 className="font-display text-3xl md:text-4xl">Training command center.</h1>
+        <p className="text-sm text-ink-soft mt-2 max-w-2xl">The app now tracks facts, hesitation, confidence, debate reps, and weak cards as one training loop.</p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <StatCard label="Overall mastery" value={`${scores.masteryOverall}%`} />
-        <StatCard label="Week accuracy" value={`${activity.weekAccuracy}%`} sub={`${activity.totalReviews} reviews logged`} />
-        <StatCard label="Debate sessions" value={`${activity.debateSessions}`} sub={`${scores.debateWins}W - ${scores.debateLosses}L`} />
-        <StatCard label="Due for review" value={`${dueCards.length}`} sub="cards" />
+        <StatCard label="Week accuracy" value={`${profile.weekAccuracy}%`} sub={`${events.length} total events`} />
+        <StatCard label="Hesitation flags" value={`${slowEvents}`} sub="slow answers" />
+        <StatCard label="Due review" value={`${dueCards.length}`} sub="cards" />
       </div>
 
-      <div className="paper-card p-5 md:p-6 mb-6 flex items-center justify-between gap-4">
+      <div className="paper-card p-5 md:p-6 mb-6 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
         <div>
-          <p className="eyebrow mb-1">Next recommended action</p>
-          <p className="font-display text-lg">{nextAction.label}</p>
+          <p className="eyebrow mb-1">Next best rep</p>
+          <p className="font-display text-xl mb-1">{nextAction.label}</p>
+          <p className="text-sm text-ink-faint">{nextAction.detail}</p>
         </div>
         <Link href={nextAction.href} className="btn-primary shrink-0">
-          Go <ArrowRight size={15} />
+          Start <ArrowRight size={15} />
         </Link>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4 mb-8">
+      <div className="grid lg:grid-cols-[1.2fr_.8fr] gap-4 mb-8">
         <div className="paper-card p-5 md:p-6">
-          <p className="eyebrow mb-3">Weak areas</p>
-          <div className="space-y-3">
-            {weakLanes.map((l) => (
-              <div key={l.slug}>
-                <div className="flex items-center justify-between text-sm mb-1">
-                  <span>{l.title}</span>
-                  <span className="text-ink-faint font-mono text-xs">{l.mastery}%</span>
-                </div>
-                <ProgressBar value={l.mastery} tone="rose" />
+          <div className="flex items-center gap-2 mb-4">
+            <Target size={17} className="text-gold" />
+            <p className="font-display text-lg">Adaptive profile</p>
+          </div>
+          <p className="text-sm text-ink-soft mb-5">{profile.summary}</p>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <p className="eyebrow mb-3">Weak lanes</p>
+              <div className="space-y-3">
+                {profile.weakestLanes.slice(0, 4).map((l) => (
+                  <div key={l.slug}>
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <span>{l.title}</span>
+                      <span className="text-ink-faint font-mono text-xs">{l.mastery}%</span>
+                    </div>
+                    <ProgressBar value={l.mastery} tone="rose" />
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+            <div>
+              <p className="eyebrow mb-3">Strongest lanes</p>
+              <div className="space-y-3">
+                {profile.strongestLanes.map((l) => (
+                  <div key={l.slug}>
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <span>{l.title}</span>
+                      <span className="text-ink-faint font-mono text-xs">{l.mastery}%</span>
+                    </div>
+                    <ProgressBar value={l.mastery} tone="slate" />
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
         <div className="paper-card p-5 md:p-6">
-          <p className="eyebrow mb-3">Current doctrine lane</p>
-          <p className="font-display text-lg mb-1">{LANE_LIST[0].title}</p>
-          <p className="text-sm text-ink-soft mb-4">{LANE_LIST[0].summary.slice(0, 110)}...</p>
-          <Link href={`/lanes/${LANE_LIST[0].slug}`} className="text-sm text-slate underline underline-offset-4">
-            Open lane
-          </Link>
+          <p className="eyebrow mb-3">Signals</p>
+          <Signal icon={AlertTriangle} label="Misses to convert" value={String(misses)} />
+          <Signal icon={Clock} label="Slow-answer flags" value={String(slowEvents)} />
+          <Signal icon={Swords} label="Debate sessions" value={String(debateSessions)} />
+          <div className="mt-4 rounded-xl bg-gold-dim/40 border border-gold-soft p-3">
+            <p className="text-sm text-ink">Rule: every miss becomes a future rep. Every slow answer becomes a recovery card.</p>
+          </div>
         </div>
       </div>
 
       <p className="eyebrow mb-3">Quick actions</p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+        <QuickAction href="/coach" icon={Target} label="Coach" />
         <QuickAction href="/drill" icon={Zap} label="Drill" />
         <QuickAction href="/memory" icon={Brain} label="Memory" />
         <QuickAction href="/debate" icon={Swords} label="Debate" />
         <QuickAction href="/mind-palace" icon={Landmark} label="Mind Palace" />
+        <QuickAction href="/facts" icon={Library} label="Facts" />
       </div>
     </div>
   );
+}
+
+function modeLabel(mode: string) {
+  return mode === "answer-20" ? "20 sec answer" : mode === "one-verse" ? "One verse only" : mode === "cross-exam" ? "Cross-exam" : mode === "trap" ? "Trap drill" : mode === "rewrite" ? "Rewrite" : "Mixed pressure";
 }
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -110,6 +138,15 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
       <p className="eyebrow mb-1">{label}</p>
       <p className="font-display text-2xl">{value}</p>
       {sub && <p className="text-xs text-ink-faint mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function Signal({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-3 border-b border-line last:border-0">
+      <div className="flex items-center gap-2 text-sm text-ink-soft"><Icon size={15} className="text-ink-faint" /> {label}</div>
+      <span className="font-mono text-sm">{value}</span>
     </div>
   );
 }

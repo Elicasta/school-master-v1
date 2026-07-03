@@ -11,6 +11,7 @@ interface DebateRequestBody {
   history: { role: "user" | "opponent" | "coach"; content: string }[];
   userMessage: string;
   coachMode?: "visible" | "hidden";
+  difficulty?: 1 | 2 | 3 | 4 | 5;
   userProfile?: {
     weakLanes?: string[];
     weakVerseIds?: string[];
@@ -27,6 +28,7 @@ function buildSystemPrompt(
   topic: string | undefined,
   coachMode: "visible" | "hidden",
   userProfile: DebateRequestBody["userProfile"],
+  difficulty: DebateRequestBody["difficulty"] = 3,
 ): string {
   const verseIndex = LANE_LIST.flatMap((lane) =>
     lane.verses.map((v) => `${v.reference} (${lane.title}): ${v.function}`),
@@ -47,6 +49,9 @@ ${topic ? `TOPIC LOCK: Stay strictly inside the topic "${topic}". Do not introdu
 
 USER TRAINING PROFILE:
 ${weakProfile || "No weak spots recorded yet. Start by probing definitions, burden of proof, and verse handling."}
+
+DIFFICULTY LEVEL: ${difficulty}
+1 friendly pushback, 2 pastor-level, 3 apologist-level, 4 hostile debate pressure, 5 cross-exam only. At level 5, mostly ask questions and force short answers.
 
 STYLE TARGET:
 The user is training a measured Scripture-first debate cadence: define the claim, locate the verse, test the consequence. Apply pressure without ranting. Ask one clean question at a time.
@@ -116,6 +121,7 @@ export async function POST(req: NextRequest) {
           body.topic,
           body.coachMode ?? "hidden",
           body.userProfile,
+          body.difficulty ?? 3,
         ),
       },
       history: (body.history ?? [])
