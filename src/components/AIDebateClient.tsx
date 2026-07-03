@@ -2,15 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Send, Wifi, Save, Gavel, History, Eye, EyeOff, Brain } from "lucide-react";
+import { ArrowLeft, Send, Wifi, Save, Gavel, History, Eye, EyeOff, Brain, MonitorSmartphone, Download } from "lucide-react";
 import { OPPONENT_LIST } from "@/data/debate";
-import { LANE_LIST } from "@/data/lanes";
 import { OpponentType } from "@/types";
 import { MarkdownLite } from "@/components/MarkdownLite";
 import { AuthWidget } from "@/components/AuthWidget";
-import { getDraft, saveDraft, clearDraft, DebateMessage, getScores, getReviewEvents, logReviewEvent } from "@/lib/local-store";
+import { getDraft, saveDraft, clearDraft, DebateMessage, logReviewEvent } from "@/lib/local-store";
 import { persistTranscript } from "@/lib/persist-transcript";
 import { buildWeaknessPayload } from "@/lib/adaptive-engine";
+import { buildDebateSystemPrompt, cleanAiError, splitDebateReply } from "@/lib/ai-prompts";
+import { createLocalSession, getModelAvailability, hasPromptAPI, isChrome } from "@/lib/browser-ai";
 
 const MAX_TURNS = 8;
 const MODERATOR_PROMPT =
@@ -32,12 +33,62 @@ export function AIDebateClient() {
   const [debateMode, setDebateMode] = useState<"moderated" | "infinite">("moderated");
   const [showCoaching, setShowCoaching] = useState(false);
   const [difficulty, setDifficulty] = useState<1 | 2 | 3 | 4 | 5>(3);
+  const [aiSource, setAiSource] = useState<"online" | "local">("local");
+  const [localStatus, setLocalStatus] = useState<"idle" | "checking" | "downloadable" | "downloading" | "ready" | "unsupported" | "unavailable">("idle");
+  const [localProgress, setLocalProgress] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(crypto.randomUUID());
+  const localSession = useRef<LanguageModelSession | null>(null);
+  const localSessionKey = useRef<string>("");
 
   const userTurns = messages.filter((m) => m.role === "user").length;
 
   const trainingProfile = useMemo(() => buildWeaknessPayload(), [messages.length]);
+
+  async function ensureLocalSession() {
+    const key = JSON.stringify({ opponentType, topic, difficulty, trainingProfile });
+    if (localSession.current && localSessionKey.current === key) return localSession.current;
+    localSession.current?.destroy();
+    localSession.current = null;
+    if (!isChrome() || !hasPromptAPI()) {
+      setLocalStatus("unsupported");
+      throw new Error("Local AI needs Chrome with the built-in Prompt API enabled.");
+    }
+    setLocalStatus("checking");
+    const availability = await getModelAvailability();
+    if (availability === "unavailable") {
+      setLocalStatus("unavailable");
+      throw new Error("Local AI is unavailable on this device.");
+    }
+    if (availability === "downloadable" || availability === "downloading") setLocalStatus("downloading");
+    const session = await createLocalSession(buildDebateSystemPrompt({
+      opponentType,
+      topic: topic || undefined,
+      userProfile: trainingProfile,
+      difficulty,
+    }), setLocalProgress);
+    localSession.current = session;
+    localSessionKey.current = key;
+    setLocalStatus("ready");
+    return session;
+  }
+
+  useEffect(() => {
+    if (aiSource !== "local") return;
+    (async () => {
+      if (!isChrome() || !hasPromptAPI()) { setLocalStatus("unsupported"); return; }
+      setLocalStatus("checking");
+      const availability = await getModelAvailability();
+      if (availability === "available") setLocalStatus("ready");
+      else if (availability === "downloadable") setLocalStatus("downloadable");
+      else if (availability === "downloading") setLocalStatus("downloading");
+      else setLocalStatus("unavailable");
+    })();
+  }, [aiSource]);
+
+  useEffect(() => {
+    return () => localSession.current?.destroy();
+  }, []);
 
   useEffect(() => {
     const draft = getDraft("ai", opponentType);
@@ -63,11 +114,21 @@ export function AIDebateClient() {
     setChecking(true);
     setCheckResult(null);
     try {
-      const res = await fetch("/api/debate/gemini/status");
-      const data = await res.json();
-      setCheckResult(data.ok ? "Connected. Gemini responded correctly." : `Not working: ${data.reason}`);
+      if (aiSource === "local") {
+        if (!isChrome() || !hasPromptAPI()) {
+          setCheckResult("Local AI is not available. Use Chrome and enable the built-in Prompt API.");
+        } else {
+          const availability = await getModelAvailability();
+          setLocalStatus(availability === "available" ? "ready" : availability === "downloadable" ? "downloadable" : availability === "downloading" ? "downloading" : "unavailable");
+          setCheckResult(`Local AI status: ${availability}.`);
+        }
+      } else {
+        const res = await fetch("/api/debate/gemini/status");
+        const data = await res.json();
+        setCheckResult(data.ok ? "Connected. Gemini responded correctly." : `Not working: ${data.reason}`);
+      }
     } catch {
-      setCheckResult("Not working: network error reaching the status endpoint.");
+      setCheckResult(aiSource === "local" ? "Local AI check failed." : "Not working: network error reaching the status endpoint.");
     } finally {
       setChecking(false);
     }
@@ -83,45 +144,54 @@ export function AIDebateClient() {
     setError(null);
 
     try {
-      const res = await fetch("/api/debate/gemini", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          opponentType,
-          topic: topic || undefined,
-          history: messages,
-          userMessage: userMsg.content,
-          coachMode: showCoaching ? "visible" : "hidden",
-          userProfile: trainingProfile,
-          difficulty,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "AI Debate Mode failed.");
+      let data: { reply: string; coaching?: string };
+      if (aiSource === "local") {
+        const session = await ensureLocalSession();
+        const visibleHistory = messages
+          .filter((m) => m.role !== "coach")
+          .map((m) => `${m.role === "user" ? "USER" : "OPPONENT"}: ${m.content}`)
+          .join("\n");
+        const raw = await session.prompt(`${visibleHistory ? `Conversation so far:\n${visibleHistory}\n\n` : ""}USER NEW MESSAGE:\n${userMsg.content}`);
+        data = splitDebateReply(raw);
       } else {
-        const opponentMsg: DebateMessage = { role: "opponent", content: data.reply, createdAt: new Date().toISOString() };
-        const coachMsg: DebateMessage = {
-          role: "coach",
-          content: data.coaching ?? "No coaching notes returned.",
-          hidden: !showCoaching,
-          createdAt: new Date().toISOString(),
-        };
-        setMessages([...nextMessages, opponentMsg, coachMsg]);
-        logReviewEvent({
-          id: `debate-${sessionId.current}-${Date.now()}`,
-          kind: "debate",
-          refId: opponentType,
-          laneSlug: null,
-          correct: true,
-          responseMs: Date.now() - new Date(userMsg.createdAt || new Date().toISOString()).getTime(),
-          mode: `ai-level-${difficulty}`,
-          createdAt: new Date().toISOString(),
+        const res = await fetch("/api/debate/gemini", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            opponentType,
+            topic: topic || undefined,
+            history: messages,
+            userMessage: userMsg.content,
+            coachMode: showCoaching ? "visible" : "hidden",
+            userProfile: trainingProfile,
+            difficulty,
+          }),
         });
-        if (isModerator) setModeratorClosed(true);
+        const payload = await res.json();
+        if (!res.ok) throw new Error(payload.error ?? "AI Debate Mode failed.");
+        data = payload;
       }
-    } catch {
-      setError("Network error reaching AI Debate Mode. Offline Debate Mode still works.");
+      const opponentMsg: DebateMessage = { role: "opponent", content: data.reply, createdAt: new Date().toISOString() };
+      const coachMsg: DebateMessage = {
+        role: "coach",
+        content: data.coaching ?? "No coaching notes returned.",
+        hidden: !showCoaching,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages([...nextMessages, opponentMsg, coachMsg]);
+      logReviewEvent({
+        id: `debate-${sessionId.current}-${Date.now()}`,
+        kind: "debate",
+        refId: opponentType,
+        laneSlug: null,
+        correct: true,
+        responseMs: Date.now() - new Date(userMsg.createdAt || new Date().toISOString()).getTime(),
+        mode: `${aiSource}-ai-level-${difficulty}`,
+        createdAt: new Date().toISOString(),
+      });
+      if (isModerator) setModeratorClosed(true);
+    } catch (err: any) {
+      setError(cleanAiError(err?.message));
     } finally {
       setLoading(false);
     }
@@ -157,6 +227,9 @@ export function AIDebateClient() {
     setStartedAt(new Date().toISOString());
     setElapsedSec(0);
     sessionId.current = crypto.randomUUID();
+    localSession.current?.destroy();
+    localSession.current = null;
+    localSessionKey.current = "";
     clearDraft("ai", opponentType);
   }
 
@@ -177,11 +250,28 @@ export function AIDebateClient() {
       </div>
 
       <div className="mb-4">
-        <p className="eyebrow mb-1">AI Debate Coach &middot; Gemini</p>
+        <p className="eyebrow mb-1">AI Debate Coach &middot; {aiSource === "local" ? "Local" : "Online"}</p>
         <h1 className="font-display text-3xl mb-2">Sparring that adapts.</h1>
         <p className="text-sm text-ink-soft max-w-2xl">
           Pure debate stays clean. Coach notes are still saved for review, and they can be shown or hidden while you train.
         </p>
+      </div>
+
+      <div className="paper-card p-3 mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="eyebrow mb-1">AI source</p>
+          <p className="text-xs text-ink-faint">Same debate engine. Online uses Gemini API. Local uses Chrome on-device AI.</p>
+        </div>
+        <div className="flex gap-1.5">
+          <button onClick={() => setAiSource("local")} className={`text-xs px-3 py-2 rounded-full border inline-flex items-center gap-1.5 ${aiSource === "local" ? "bg-ink text-paper border-ink" : "border-line text-ink-faint"}`}><MonitorSmartphone size={12} /> Local</button>
+          <button onClick={() => setAiSource("online")} className={`text-xs px-3 py-2 rounded-full border inline-flex items-center gap-1.5 ${aiSource === "online" ? "bg-gold text-paper border-gold" : "border-line text-ink-faint"}`}><Wifi size={12} /> Online</button>
+        </div>
+        {aiSource === "local" && localStatus !== "ready" && (
+          <p className="basis-full text-xs text-ink-faint inline-flex items-center gap-1.5">
+            {localStatus === "downloading" ? <Download size={12} /> : <MonitorSmartphone size={12} />}
+            Local AI status: {localStatus}{localStatus === "downloading" ? ` ${localProgress}%` : ""}. Send a message to initialize/download when needed.
+          </p>
+        )}
       </div>
 
       <div className="mb-4">
@@ -194,7 +284,7 @@ export function AIDebateClient() {
         </select>
         <input placeholder="Topic lock, optional" value={topic} onChange={(e) => setTopic(e.target.value)} className="border border-line rounded-xl px-3 py-3 text-sm bg-surface" />
         <button onClick={checkConnection} disabled={checking} className="btn-secondary text-xs py-3 whitespace-nowrap">
-          <Wifi size={13} /> {checking ? "Checking" : "Check AI"}
+          <Wifi size={13} /> {checking ? "Checking" : aiSource === "local" ? "Check Local" : "Check Online"}
         </button>
       </div>
       {checkResult && <p className={`text-xs mb-4 ${checkResult.startsWith("Connected") ? "text-slate" : "text-rose"}`}>{checkResult}</p>}

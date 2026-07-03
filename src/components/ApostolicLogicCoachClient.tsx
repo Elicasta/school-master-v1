@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, CheckCircle2, ClipboardList, Loader2, RefreshCw, ShieldCheck, SlidersHorizontal, XCircle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, CheckCircle2, ClipboardList, Download, Loader2, MonitorSmartphone, RefreshCw, ShieldCheck, SlidersHorizontal, Wifi, XCircle } from "lucide-react";
 import { MarkdownLite } from "@/components/MarkdownLite";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import {
@@ -15,6 +15,8 @@ import {
 } from "@/lib/apostolic-logic-coach";
 import { buildWeaknessPayload, memoryCardFromWeakness } from "@/lib/adaptive-engine";
 import { addMemoryCard, logReviewEvent } from "@/lib/local-store";
+import { buildApostolicCritiquePrompt, parseJson } from "@/lib/ai-prompts";
+import { createLocalSession, getModelAvailability, hasPromptAPI, isChrome } from "@/lib/browser-ai";
 
 function scoreLabel(score: number) {
   if (score >= 82) return "Locked";
@@ -51,7 +53,51 @@ export function ApostolicLogicCoachClient() {
   const [startedAt, setStartedAt] = useState(Date.now());
   const [elapsed, setElapsed] = useState(0);
   const [autoCard, setAutoCard] = useState(true);
+  const [aiSource, setAiSource] = useState<"online" | "local">("local");
+  const [localStatus, setLocalStatus] = useState<"idle" | "checking" | "downloadable" | "downloading" | "ready" | "unsupported" | "unavailable">("idle");
+  const [localProgress, setLocalProgress] = useState(0);
+  const localSession = useRef<LanguageModelSession | null>(null);
   const profile = useMemo(() => buildWeaknessPayload(), []);
+
+
+  async function ensureLocalSession() {
+    if (localSession.current) return localSession.current;
+    if (!isChrome() || !hasPromptAPI()) {
+      setLocalStatus("unsupported");
+      throw new Error("Local AI needs Chrome with the built-in Prompt API enabled.");
+    }
+    setLocalStatus("checking");
+    const availability = await getModelAvailability();
+    if (availability === "unavailable") {
+      setLocalStatus("unavailable");
+      throw new Error("Local AI is unavailable on this device.");
+    }
+    if (availability === "downloadable" || availability === "downloading") setLocalStatus("downloading");
+    const session = await createLocalSession(
+      "You are the local Apostolic Logic style coach for School Master. Return valid JSON only. Match the Online Gemini critique feature set exactly, just without network calls.",
+      setLocalProgress,
+    );
+    localSession.current = session;
+    setLocalStatus("ready");
+    return session;
+  }
+
+  useEffect(() => {
+    if (aiSource !== "local") return;
+    (async () => {
+      if (!isChrome() || !hasPromptAPI()) { setLocalStatus("unsupported"); return; }
+      setLocalStatus("checking");
+      const availability = await getModelAvailability();
+      if (availability === "available") setLocalStatus("ready");
+      else if (availability === "downloadable") setLocalStatus("downloadable");
+      else if (availability === "downloading") setLocalStatus("downloading");
+      else setLocalStatus("unavailable");
+    })();
+  }, [aiSource]);
+
+  useEffect(() => {
+    return () => localSession.current?.destroy();
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 300);
@@ -75,13 +121,24 @@ export function ApostolicLogicCoachClient() {
     const responseMs = Date.now() - startedAt;
 
     try {
-      const res = await fetch("/api/apostolic-logic/critique", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rep, response: answer, profile }),
-      });
-      const data = await res.json();
-      const result: ApostolicLogicCritique = res.ok ? data : localApostolicLogicCritique(rep, answer);
+      let result: ApostolicLogicCritique;
+      if (aiSource === "local") {
+        const session = await ensureLocalSession();
+        const raw = await session.prompt(buildApostolicCritiquePrompt({ rep, response: answer, profile }));
+        const parsed = parseJson(raw);
+        const fallback = localApostolicLogicCritique(rep, answer);
+        result = parsed?.betterAnswer && typeof parsed.score === "number"
+          ? { ...fallback, ...parsed, score: Math.max(0, Math.min(100, Math.round(parsed.score))) }
+          : fallback;
+      } else {
+        const res = await fetch("/api/apostolic-logic/critique", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rep, response: answer, profile }),
+        });
+        const data = await res.json();
+        result = res.ok ? data : localApostolicLogicCritique(rep, answer);
+      }
       setCritique(result);
       logReviewEvent({
         id: `apostolic-logic-${rep.id}-${Date.now()}`,
@@ -130,6 +187,23 @@ export function ApostolicLogicCoachClient() {
           <p className="text-sm text-ink-soft mb-5 max-w-3xl">
             This is separate from the debate engine. It trains the adapted GodLogic mechanics as your own style: define the claim, locate the text, test the consequence, and keep the burden where it belongs.
           </p>
+
+          <div className="paper-card p-3 mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="eyebrow mb-1">AI source</p>
+              <p className="text-xs text-ink-faint">Same style coach. Online uses Gemini API. Local uses Chrome on-device AI.</p>
+            </div>
+            <div className="flex gap-1.5">
+              <button onClick={() => setAiSource("local")} className={`text-xs px-3 py-2 rounded-full border inline-flex items-center gap-1.5 ${aiSource === "local" ? "bg-ink text-paper border-ink" : "border-line text-ink-faint"}`}><MonitorSmartphone size={12} /> Local</button>
+              <button onClick={() => setAiSource("online")} className={`text-xs px-3 py-2 rounded-full border inline-flex items-center gap-1.5 ${aiSource === "online" ? "bg-gold text-paper border-gold" : "border-line text-ink-faint"}`}><Wifi size={12} /> Online</button>
+            </div>
+            {aiSource === "local" && localStatus !== "ready" && (
+              <p className="basis-full text-xs text-ink-faint inline-flex items-center gap-1.5">
+                {localStatus === "downloading" ? <Download size={12} /> : <MonitorSmartphone size={12} />}
+                Local AI status: {localStatus}{localStatus === "downloading" ? ` ${localProgress}%` : ""}. Grade once to initialize/download when needed.
+              </p>
+            )}
+          </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
             {APOSTOLIC_LOGIC_MODES.map((m) => (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Brain, CheckCircle2, Loader2, RefreshCw, Sparkles, Timer, XCircle } from "lucide-react";
+import { Brain, CheckCircle2, Download, Loader2, MonitorSmartphone, RefreshCw, Sparkles, Timer, Wifi, XCircle } from "lucide-react";
 import { LANE_LIST } from "@/data/lanes";
 import { addMemoryCard, getScores, logReviewEvent, saveScores } from "@/lib/local-store";
 import { buildAdaptiveProfile, CoachMode, localAdaptiveFallback, memoryCardFromWeakness, buildWeaknessPayload } from "@/lib/adaptive-engine";
@@ -9,6 +9,8 @@ import { applyDrillResult, recordWeakVerse } from "@/lib/scoring";
 import { DrillQuestion, LaneSlug } from "@/types";
 import { MarkdownLite } from "@/components/MarkdownLite";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { buildCoachGenerationPrompt, cleanAiError, parseJson } from "@/lib/ai-prompts";
+import { createLocalSession, getModelAvailability, hasPromptAPI, isChrome } from "@/lib/browser-ai";
 
 type CoachPayload = {
   prompt: string;
@@ -43,12 +45,52 @@ export function CoachClient() {
   const [elapsed, setElapsed] = useState(0);
   const [confidence, setConfidence] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [profileTick, setProfileTick] = useState(0);
+  const [aiSource, setAiSource] = useState<"online" | "local">("local");
+  const [localStatus, setLocalStatus] = useState<"idle" | "checking" | "downloadable" | "downloading" | "ready" | "unsupported" | "unavailable">("idle");
+  const [localProgress, setLocalProgress] = useState(0);
   const timer = useRef<number | null>(null);
+  const localSession = useRef<LanguageModelSession | null>(null);
 
   const profile = useMemo(() => buildAdaptiveProfile(), [profileTick]);
   const lane = LANE_LIST.find((l) => l.slug === laneSlug) ?? LANE_LIST[0];
   const currentMode = mode === "mixed" ? profile.recommendedMode : mode;
   const isFreeMode = currentMode === "rewrite" || currentMode === "cross-exam" || currentMode === "answer-20";
+
+
+  async function ensureLocalSession() {
+    if (localSession.current) return localSession.current;
+    if (!isChrome() || !hasPromptAPI()) {
+      setLocalStatus("unsupported");
+      throw new Error("Local AI needs Chrome with the built-in Prompt API enabled.");
+    }
+    setLocalStatus("checking");
+    const availability = await getModelAvailability();
+    if (availability === "unavailable") {
+      setLocalStatus("unavailable");
+      throw new Error("Local AI is unavailable on this device.");
+    }
+    if (availability === "downloadable" || availability === "downloading") setLocalStatus("downloading");
+    const session = await createLocalSession(
+      "You are the local adaptive debate coach for School Master. Return valid JSON only. Match the Online Gemini feature set exactly, just without network calls.",
+      setLocalProgress,
+    );
+    localSession.current = session;
+    setLocalStatus("ready");
+    return session;
+  }
+
+  useEffect(() => {
+    if (aiSource !== "local") return;
+    (async () => {
+      if (!isChrome() || !hasPromptAPI()) { setLocalStatus("unsupported"); return; }
+      setLocalStatus("checking");
+      const availability = await getModelAvailability();
+      if (availability === "available") setLocalStatus("ready");
+      else if (availability === "downloadable") setLocalStatus("downloadable");
+      else if (availability === "downloading") setLocalStatus("downloading");
+      else setLocalStatus("unavailable");
+    })();
+  }, [aiSource]);
 
   useEffect(() => {
     setMode(profile.recommendedMode);
@@ -74,13 +116,23 @@ export function CoachClient() {
     setStartedAt(Date.now());
 
     try {
-      const res = await fetch("/api/coach/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ laneSlug, mode: currentMode, profile: buildWeaknessPayload() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Coach generation failed.");
+      let data: CoachPayload & { id?: string };
+      if (aiSource === "local") {
+        const session = await ensureLocalSession();
+        const raw = await session.prompt(buildCoachGenerationPrompt({ laneSlug, mode: currentMode, profile: buildWeaknessPayload() }));
+        const parsed = parseJson(raw);
+        if (!parsed?.prompt || !parsed?.answer) throw new Error("Local AI returned an invalid coach drill.");
+        data = parsed;
+      } else {
+        const res = await fetch("/api/coach/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ laneSlug, mode: currentMode, profile: buildWeaknessPayload() }),
+        });
+        const payload = await res.json();
+        if (!res.ok) throw new Error(payload.error ?? "Coach generation failed.");
+        data = payload;
+      }
       const q: DrillQuestion = {
         id: data.id ?? `coach-${currentMode}-${Date.now()}`,
         level: 4,
@@ -95,8 +147,8 @@ export function CoachClient() {
     } catch (err: any) {
       const fallback = localAdaptiveFallback(laneSlug, currentMode);
       setQuestion(fallback);
-      setAiData({ prompt: fallback.prompt, choices: fallback.choices, answer: fallback.answer, verseId: fallback.verseId, coaching: err?.message ?? "Using local fallback." });
-      setError("AI coach was unavailable, so I loaded a local pressure drill.");
+      setAiData({ prompt: fallback.prompt, choices: fallback.choices, answer: fallback.answer, verseId: fallback.verseId, coaching: cleanAiError(err?.message) });
+      setError(`${aiSource === "local" ? "Local" : "Online"} AI was unavailable, so I loaded a built-in pressure drill.`);
     } finally {
       setLoading(false);
     }
@@ -105,7 +157,11 @@ export function CoachClient() {
   useEffect(() => {
     generate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [laneSlug, mode]);
+  }, [laneSlug, mode, aiSource]);
+  useEffect(() => {
+    return () => localSession.current?.destroy();
+  }, []);
+
 
   function grade(correct: boolean) {
     if (!question) return;
@@ -165,6 +221,23 @@ export function CoachClient() {
           <p className="text-sm text-ink-soft mb-5 max-w-2xl">
             The coach uses misses, slow answers, confidence, and lane mastery to create tighter traps. Weak reps become memory cards automatically.
           </p>
+
+          <div className="paper-card p-3 mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="eyebrow mb-1">AI source</p>
+              <p className="text-xs text-ink-faint">Same drill engine. Online uses Gemini API. Local uses Chrome on-device AI.</p>
+            </div>
+            <div className="flex gap-1.5">
+              <button onClick={() => setAiSource("local")} className={`text-xs px-3 py-2 rounded-full border inline-flex items-center gap-1.5 ${aiSource === "local" ? "bg-ink text-paper border-ink" : "border-line text-ink-faint"}`}><MonitorSmartphone size={12} /> Local</button>
+              <button onClick={() => setAiSource("online")} className={`text-xs px-3 py-2 rounded-full border inline-flex items-center gap-1.5 ${aiSource === "online" ? "bg-gold text-paper border-gold" : "border-line text-ink-faint"}`}><Wifi size={12} /> Online</button>
+            </div>
+            {aiSource === "local" && localStatus !== "ready" && (
+              <p className="basis-full text-xs text-ink-faint inline-flex items-center gap-1.5">
+                {localStatus === "downloading" ? <Download size={12} /> : <MonitorSmartphone size={12} />}
+                Local AI status: {localStatus}{localStatus === "downloading" ? ` ${localProgress}%` : ""}. Click New rep to initialize/download when needed.
+              </p>
+            )}
+          </div>
 
           <div className="paper-card p-3 mb-4 grid sm:grid-cols-2 gap-2">
             <select value={laneSlug} onChange={(e) => setLaneSlug(e.target.value)} className="border border-line rounded-xl px-3 py-3 text-sm bg-surface">
