@@ -8,20 +8,36 @@ export const runtime = "nodejs";
 interface DebateRequestBody {
   opponentType: string;
   topic?: string;
-  history: { role: "user" | "opponent"; content: string }[];
+  history: { role: "user" | "opponent" | "coach"; content: string }[];
   userMessage: string;
+  coachMode?: "visible" | "hidden";
+  userProfile?: {
+    weakLanes?: string[];
+    weakVerseIds?: string[];
+    weakObjectionIds?: string[];
+    recentMisses?: string[];
+  };
 }
 
-// "gemini-flash-latest" is a Google-managed alias that auto-updates to the current
-// stable Flash model. Pinning to a dated model string (e.g. gemini-1.5-flash) is
-// what broke this route last time, Google shut that model down entirely. The alias
-// exists specifically to prevent that class of bug from recurring here.
 const MODEL = "gemini-flash-latest";
 
-function buildSystemPrompt(opponentLabel: string, opponentDescription: string, topic: string | undefined): string {
+function buildSystemPrompt(
+  opponentLabel: string,
+  opponentDescription: string,
+  topic: string | undefined,
+  coachMode: "visible" | "hidden",
+  userProfile: DebateRequestBody["userProfile"],
+): string {
   const verseIndex = LANE_LIST.flatMap((lane) =>
     lane.verses.map((v) => `${v.reference} (${lane.title}): ${v.function}`),
   ).join("\n");
+
+  const weakProfile = [
+    userProfile?.weakLanes?.length ? `Weak lanes: ${userProfile.weakLanes.join(", ")}` : null,
+    userProfile?.weakVerseIds?.length ? `Weak verses: ${userProfile.weakVerseIds.join(", ")}` : null,
+    userProfile?.weakObjectionIds?.length ? `Weak objections: ${userProfile.weakObjectionIds.join(", ")}` : null,
+    userProfile?.recentMisses?.length ? `Recent hesitation/misses: ${userProfile.recentMisses.join(" | ")}` : null,
+  ].filter(Boolean).join("\n");
 
   return `You are simulating a debate opponent in a Scripture study app called School Master.
 
@@ -29,16 +45,36 @@ OPPONENT PROFILE: ${opponentLabel}
 ${opponentDescription}
 ${topic ? `TOPIC LOCK: Stay strictly inside the topic "${topic}". Do not introduce arguments from other opponent profiles or unrelated topics.` : ""}
 
+USER TRAINING PROFILE:
+${weakProfile || "No weak spots recorded yet. Start by probing definitions, burden of proof, and verse handling."}
+
+STYLE TARGET:
+The user is training a measured Scripture-first debate cadence: define the claim, locate the verse, test the consequence. Apply pressure without ranting. Ask one clean question at a time.
+
 RULES YOU MUST FOLLOW:
 1. Stay in character as ${opponentLabel} only. Do not mix in arguments from other traditions unless the user explicitly asks you to.
-2. Ask one challenge or follow-up question at a time. Do not dump multiple arguments in one turn.
-3. After the user responds, give brief correction/coaching feedback: score their clarity, scripture use, logic, and fairness on a 1-5 scale each, then continue the debate in character.
-4. When citing scripture, prefer the reference list below, which is the app's own stored doctrine data. Treat this as the source of truth for what the user has studied. Do not invent doctrine outside your opponent profile.
-5. Keep responses concise, 3-6 sentences for the in-character challenge, plus a short coaching note.
+2. The visible opponent reply must be pure debate. Do not include coaching, scores, labels, or meta commentary inside the opponent reply.
+3. Still create private coach notes every turn for later review. Diagnose hesitation, weak logic, missing verse use, and the next drill target.
+4. If the user dodges, press the exact dodge. If the user is strong, raise difficulty by using tighter distinctions and less obvious objections.
+5. Keep the opponent reply concise: 3-6 sentences, one challenge or question at the end.
 6. Never break character to discuss AI safety, your own nature, or meta-commentary about being an AI.
+7. Output exactly this format:
+OPPONENT_REPLY:
+<the in-character debate response only>
 
-APP'S STORED VERSE REFERENCE INDEX (for citation grounding):
+COACHING_NOTES:
+<brief notes: clarity 1-5, scripture 1-5, logic 1-5, fairness 1-5, hesitation signal, recommended drill>
+
+APP'S STORED VERSE REFERENCE INDEX:
 ${verseIndex}`;
+}
+
+function splitReply(raw: string): { reply: string; coaching: string } {
+  const opponentMatch = raw.match(/OPPONENT_REPLY:\s*([\s\S]*?)(?:\n\s*COACHING_NOTES:|$)/i);
+  const coachMatch = raw.match(/COACHING_NOTES:\s*([\s\S]*)$/i);
+  const reply = (opponentMatch?.[1] ?? raw).trim();
+  const coaching = (coachMatch?.[1] ?? "No separate coach notes returned.").trim();
+  return { reply, coaching };
 }
 
 export async function POST(req: NextRequest) {
@@ -47,7 +83,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "GEMINI_API_KEY is not set on the server. If you already added it in Vercel, redeploy after saving env vars, they don't apply to a build that already ran. Offline Debate Mode works without this.",
+          "GEMINI_API_KEY is not set on the server. If you already added it in Vercel, redeploy after saving env vars. Offline Debate Mode still works without this.",
       },
       { status: 503 },
     );
@@ -74,12 +110,20 @@ export async function POST(req: NextRequest) {
     const chat = ai.chats.create({
       model: MODEL,
       config: {
-        systemInstruction: buildSystemPrompt(opponent.label, opponent.description, body.topic),
+        systemInstruction: buildSystemPrompt(
+          opponent.label,
+          opponent.description,
+          body.topic,
+          body.coachMode ?? "hidden",
+          body.userProfile,
+        ),
       },
-      history: (body.history ?? []).map((h) => ({
-        role: h.role === "user" ? "user" : "model",
-        parts: [{ text: h.content }],
-      })),
+      history: (body.history ?? [])
+        .filter((h) => h.role !== "coach")
+        .map((h) => ({
+          role: h.role === "user" ? "user" : "model",
+          parts: [{ text: h.content }],
+        })),
     });
 
     const result = await chat.sendMessage({ message: body.userMessage });
@@ -89,10 +133,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Gemini returned an empty response. Try again." }, { status: 502 });
     }
 
-    return NextResponse.json({ reply: text });
+    return NextResponse.json(splitReply(text));
   } catch (err: any) {
-    // Surface the real cause instead of a generic failure, this is the #1 thing
-    // that makes "AI Debate Mode isn't working" reports impossible to debug.
     console.error("Gemini debate error:", err);
     const message: string = err?.message ?? "Unknown error";
 
@@ -100,7 +142,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "GEMINI_API_KEY is set but invalid. Generate a fresh key at aistudio.google.com/app/apikey." }, { status: 401 });
     }
     if (message.includes("404") || message.toLowerCase().includes("not found")) {
-      return NextResponse.json({ error: `Model "${MODEL}" was not found or not available for this key/region. Try again, or check ai.google.dev/gemini-api/docs/models for the current model list.` }, { status: 502 });
+      return NextResponse.json({ error: `Model "${MODEL}" was not found or not available for this key/region.` }, { status: 502 });
     }
     if (message.includes("429") || message.toLowerCase().includes("quota") || message.toLowerCase().includes("rate limit")) {
       return NextResponse.json({ error: "Gemini rate limit or quota exceeded for this key. Wait a moment and try again." }, { status: 429 });

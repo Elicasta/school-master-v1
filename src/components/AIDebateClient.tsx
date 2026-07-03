@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Send, Wifi, Save, Gavel, History } from "lucide-react";
+import { ArrowLeft, Send, Wifi, Save, Gavel, History, Eye, EyeOff, Brain } from "lucide-react";
 import { OPPONENT_LIST } from "@/data/debate";
+import { LANE_LIST } from "@/data/lanes";
 import { OpponentType } from "@/types";
 import { MarkdownLite } from "@/components/MarkdownLite";
 import { AuthWidget } from "@/components/AuthWidget";
-import { getDraft, saveDraft, clearDraft, DebateMessage } from "@/lib/local-store";
+import { getDraft, saveDraft, clearDraft, DebateMessage, getScores, getReviewEvents } from "@/lib/local-store";
 import { persistTranscript } from "@/lib/persist-transcript";
 
-const MAX_TURNS = 8; // moderator steps in after this many user turns in Moderated mode
+const MAX_TURNS = 8;
 const MODERATOR_PROMPT =
-  "MODERATOR: Wrap up this debate now. Give a final verdict: summarize the strongest point each side made, then score the user's overall performance on clarity, scripture use, logic, and fairness (1-5 each) with one sentence of coaching for next time.";
+  "MODERATOR: Wrap up this debate now. Give a final verdict. In the opponent reply, stay concise. In coaching notes, score clarity, scripture use, logic, and fairness, then name the exact next drill.";
 
 export function AIDebateClient() {
   const [opponentType, setOpponentType] = useState<OpponentType>("trinitarian");
@@ -28,21 +29,37 @@ export function AIDebateClient() {
   const [moderatorClosed, setModeratorClosed] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [debateMode, setDebateMode] = useState<"moderated" | "infinite">("moderated");
+  const [showCoaching, setShowCoaching] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(crypto.randomUUID());
 
   const userTurns = messages.filter((m) => m.role === "user").length;
 
-  // Restore an in-progress draft when switching back to this opponent (fixes the
-  // "chat disappears when I navigate away" problem).
+  const trainingProfile = useMemo(() => {
+    const scores = getScores();
+    const weakLanes = LANE_LIST
+      .map((l) => ({ slug: l.slug, title: l.title, mastery: scores.laneMastery[l.slug] ?? 0 }))
+      .sort((a, b) => a.mastery - b.mastery)
+      .slice(0, 4)
+      .map((l) => `${l.title} (${l.mastery}%)`);
+    const misses = getReviewEvents()
+      .filter((e) => e.correct === false)
+      .slice(-8)
+      .map((e) => `${e.kind}:${e.refId}`);
+    return {
+      weakLanes,
+      weakVerseIds: scores.weakVerseIds.slice(-12),
+      weakObjectionIds: scores.weakObjectionIds.slice(-12),
+      recentMisses: misses,
+    };
+  }, [messages.length]);
+
   useEffect(() => {
     const draft = getDraft("ai", opponentType);
     setMessages(draft);
     setModeratorClosed(false);
   }, [opponentType]);
 
-  // Elapsed timer only runs once the debate actually has a message, not from the
-  // moment the page loads, that was the "timer starts automatically" bug.
   useEffect(() => {
     if (userTurns === 0) return;
     const timer = window.setInterval(() => setElapsedSec((s) => s + 1), 1000);
@@ -55,7 +72,7 @@ export function AIDebateClient() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+  }, [messages, showCoaching]);
 
   async function checkConnection() {
     setChecking(true);
@@ -73,7 +90,7 @@ export function AIDebateClient() {
 
   async function sendMessage(text: string, isModerator = false) {
     if (!text.trim()) return;
-    const userMsg: DebateMessage = { role: "user", content: text };
+    const userMsg: DebateMessage = { role: "user", content: text, createdAt: new Date().toISOString() };
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
     setInput("");
@@ -89,13 +106,22 @@ export function AIDebateClient() {
           topic: topic || undefined,
           history: messages,
           userMessage: userMsg.content,
+          coachMode: showCoaching ? "visible" : "hidden",
+          userProfile: trainingProfile,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "AI Debate Mode failed.");
       } else {
-        setMessages([...nextMessages, { role: "opponent", content: data.reply }]);
+        const opponentMsg: DebateMessage = { role: "opponent", content: data.reply, createdAt: new Date().toISOString() };
+        const coachMsg: DebateMessage = {
+          role: "coach",
+          content: data.coaching ?? "No coaching notes returned.",
+          hidden: !showCoaching,
+          createdAt: new Date().toISOString(),
+        };
+        setMessages([...nextMessages, opponentMsg, coachMsg]);
         if (isModerator) setModeratorClosed(true);
       }
     } catch {
@@ -141,10 +167,11 @@ export function AIDebateClient() {
   const mins = Math.floor(elapsedSec / 60);
   const secs = elapsedSec % 60;
   const atCap = debateMode === "moderated" && userTurns >= MAX_TURNS;
+  const visibleMessages = messages.filter((m) => m.role !== "coach" || showCoaching);
 
   return (
-    <div className="px-5 py-8 md:px-10 md:py-10 max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="px-4 py-6 md:px-10 md:py-10 max-w-3xl mx-auto">
+      <div className="flex items-center justify-between mb-5">
         <Link href="/debate" className="inline-flex items-center gap-1.5 text-sm text-ink-faint hover:text-ink">
           <ArrowLeft size={14} /> Debate Mode
         </Link>
@@ -153,54 +180,76 @@ export function AIDebateClient() {
         </Link>
       </div>
 
-      <p className="eyebrow mb-1">AI Debate Mode &middot; Gemini</p>
-      <h1 className="font-display text-3xl mb-3">Dynamic sparring.</h1>
+      <div className="mb-4">
+        <p className="eyebrow mb-1">AI Debate Coach &middot; Gemini</p>
+        <h1 className="font-display text-3xl mb-2">Sparring that adapts.</h1>
+        <p className="text-sm text-ink-soft max-w-2xl">
+          Pure debate stays clean. Coach notes are still saved for review, and they can be shown or hidden while you train.
+        </p>
+      </div>
 
       <div className="mb-4">
         <AuthWidget compact />
       </div>
 
-      <div className="flex items-center gap-3 mb-6 flex-wrap">
-        <button onClick={checkConnection} disabled={checking} className="btn-secondary text-xs py-2">
-          <Wifi size={13} /> {checking ? "Checking..." : "Check connection"}
-        </button>
-        {checkResult && (
-          <p className={`text-xs ${checkResult.startsWith("Connected") ? "text-slate" : "text-rose"}`}>{checkResult}</p>
-        )}
-      </div>
-
-      <div className="grid sm:grid-cols-2 gap-3 mb-4">
-        <select value={opponentType} onChange={(e) => setOpponentType(e.target.value as OpponentType)} className="border border-line rounded-lg px-3 py-2 text-sm bg-surface">
+      <div className="grid gap-3 mb-4 md:grid-cols-[1fr_1fr_auto]">
+        <select value={opponentType} onChange={(e) => setOpponentType(e.target.value as OpponentType)} className="border border-line rounded-xl px-3 py-3 text-sm bg-surface">
           {OPPONENT_LIST.map((o) => <option key={o.type} value={o.type}>{o.label}</option>)}
         </select>
-        <input placeholder="Topic lock (optional)" value={topic} onChange={(e) => setTopic(e.target.value)} className="border border-line rounded-lg px-3 py-2 text-sm bg-surface" />
+        <input placeholder="Topic lock, optional" value={topic} onChange={(e) => setTopic(e.target.value)} className="border border-line rounded-xl px-3 py-3 text-sm bg-surface" />
+        <button onClick={checkConnection} disabled={checking} className="btn-secondary text-xs py-3 whitespace-nowrap">
+          <Wifi size={13} /> {checking ? "Checking" : "Check AI"}
+        </button>
       </div>
+      {checkResult && <p className={`text-xs mb-4 ${checkResult.startsWith("Connected") ? "text-slate" : "text-rose"}`}>{checkResult}</p>}
 
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex gap-1.5">
+      <div className="paper-card p-3 mb-4 grid gap-3 sm:flex sm:items-center sm:justify-between">
+        <div className="flex gap-1.5 flex-wrap">
           <button
             onClick={() => setDebateMode("moderated")}
-            className={`text-xs px-3 py-1.5 rounded-full border ${debateMode === "moderated" ? "bg-ink text-paper border-ink" : "border-line text-ink-faint"}`}
+            className={`text-xs px-3 py-2 rounded-full border ${debateMode === "moderated" ? "bg-ink text-paper border-ink" : "border-line text-ink-faint"}`}
           >
             Moderated
           </button>
           <button
             onClick={() => setDebateMode("infinite")}
-            className={`text-xs px-3 py-1.5 rounded-full border ${debateMode === "infinite" ? "bg-ink text-paper border-ink" : "border-line text-ink-faint"}`}
+            className={`text-xs px-3 py-2 rounded-full border ${debateMode === "infinite" ? "bg-ink text-paper border-ink" : "border-line text-ink-faint"}`}
           >
             Infinite
           </button>
+          <button
+            onClick={() => setShowCoaching((v) => !v)}
+            className={`text-xs px-3 py-2 rounded-full border inline-flex items-center gap-1.5 ${showCoaching ? "bg-gold text-paper border-gold" : "border-line text-ink-faint"}`}
+          >
+            {showCoaching ? <Eye size={12} /> : <EyeOff size={12} />}
+            {showCoaching ? "Coach on" : "Pure debate"}
+          </button>
         </div>
-        <div className="text-xs text-ink-faint font-mono text-right">
+        <div className="text-xs text-ink-faint font-mono sm:text-right">
           <div>Turn {userTurns}{debateMode === "moderated" ? ` / ${MAX_TURNS}` : ""}</div>
           <div>{mins}:{secs.toString().padStart(2, "0")} elapsed</div>
         </div>
       </div>
 
-      <div ref={scrollRef} className="paper-card p-4 min-h-[300px] max-h-[440px] overflow-y-auto mb-4 space-y-3">
-        {messages.length === 0 && <p className="text-sm text-ink-faint">Send an opening message to start the debate.</p>}
-        {messages.map((m, i) => (
-          <div key={i} className={`text-sm p-3 rounded-xl max-w-[85%] ${m.role === "user" ? "bg-ink text-paper ml-auto" : "bg-paper-dim text-ink"}`}>
+      <div ref={scrollRef} className="paper-card p-3 sm:p-4 min-h-[340px] max-h-[58vh] overflow-y-auto mb-4 space-y-3">
+        {messages.length === 0 && (
+          <div className="text-sm text-ink-faint space-y-2">
+            <p>Send an opening message to start. Best opening: state your thesis in two sentences, then ask one burden-of-proof question.</p>
+            <p className="inline-flex items-center gap-1.5 text-xs"><Brain size={13} /> Adaptive mode will lean into your weak lanes and recent misses.</p>
+          </div>
+        )}
+        {visibleMessages.map((m, i) => (
+          <div
+            key={i}
+            className={`text-sm p-3 rounded-2xl max-w-[92%] sm:max-w-[85%] ${
+              m.role === "user"
+                ? "bg-ink text-paper ml-auto"
+                : m.role === "coach"
+                  ? "bg-gold-dim text-ink border border-gold-soft"
+                  : "bg-paper-dim text-ink"
+            }`}
+          >
+            {m.role === "coach" && <p className="eyebrow mb-2 text-gold">Coach notes</p>}
             <MarkdownLite text={m.content} />
           </div>
         ))}
@@ -210,16 +259,16 @@ export function AIDebateClient() {
       {error && <div className="paper-card p-3 mb-4 bg-rose-dim text-sm text-rose">{error}</div>}
 
       {atCap && !moderatorClosed && (
-        <div className="paper-card p-4 mb-4 bg-gold-dim flex items-center justify-between gap-3">
-          <p className="text-sm text-ink">Turn cap reached, this debate has run long enough to lose focus.</p>
+        <div className="paper-card p-4 mb-4 bg-gold-dim grid gap-3 sm:flex sm:items-center sm:justify-between">
+          <p className="text-sm text-ink">Turn cap reached. Get the verdict before the exchange sprawls.</p>
           <button onClick={requestVerdict} disabled={loading} className="btn-gold text-xs py-2 shrink-0"><Gavel size={13} /> Get verdict</button>
         </div>
       )}
 
       {moderatorClosed ? (
-        <div className="flex gap-2">
-          <button onClick={handleSave} className="btn-primary flex-1"><Save size={14} /> Save transcript</button>
-          <button onClick={newDebate} className="btn-secondary flex-1">New debate</button>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={handleSave} className="btn-primary"><Save size={14} /> Save</button>
+          <button onClick={newDebate} className="btn-secondary">New debate</button>
         </div>
       ) : (
         <div className="flex gap-2">
@@ -229,14 +278,14 @@ export function AIDebateClient() {
             onKeyDown={(e) => e.key === "Enter" && send()}
             placeholder="Your response..."
             disabled={loading}
-            className="flex-1 border border-line rounded-xl px-4 py-3 text-sm bg-surface"
+            className="flex-1 min-w-0 border border-line rounded-xl px-4 py-3 text-sm bg-surface"
           />
-          <button onClick={send} disabled={loading} className="btn-primary"><Send size={15} /></button>
+          <button onClick={send} disabled={loading} className="btn-primary px-4"><Send size={15} /></button>
         </div>
       )}
 
       {messages.length > 0 && !moderatorClosed && (
-        <div className="flex gap-4 mt-3">
+        <div className="flex gap-4 mt-3 flex-wrap">
           <button onClick={handleSave} className="text-xs text-slate underline underline-offset-4">
             <Save size={11} className="inline -mt-0.5 mr-1" /> Save transcript now
           </button>

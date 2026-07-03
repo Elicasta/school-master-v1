@@ -74,6 +74,7 @@ create table if not exists debate_nodes (
 create table if not exists memory_cards (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid references profiles(id) on delete cascade,
+  client_id text, -- stable local id so mobile/desktop can merge the same card
   lane_slug text references doctrine_lanes(slug),
   verse_id text references verses(id),
   reference text not null,
@@ -93,6 +94,7 @@ create table if not exists memory_cards (
 create table if not exists review_events (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid references profiles(id) on delete cascade,
+  client_id text, -- stable local id so review events do not duplicate across devices
   kind text not null check (kind in ('drill','memory','debate','mind-palace')),
   ref_id text not null,
   lane_slug text references doctrine_lanes(slug),
@@ -226,6 +228,10 @@ create policy "own ai sessions" on ai_debate_sessions for all using (auth.uid() 
 create policy "own ai messages" on ai_debate_messages for all using (
   exists (select 1 from ai_debate_sessions s where s.id = session_id and s.user_id = auth.uid())
 );
+
+create unique index if not exists memory_cards_user_client_id_idx on memory_cards(user_id, client_id) where client_id is not null;
+create unique index if not exists review_events_user_client_id_idx on review_events(user_id, client_id) where client_id is not null;
+
 
 -- Content tables (lanes, verses, drill_questions, debate_*, facts_*, church_fathers,
 -- doctrine_comparisons, church_history_events) are public read, no RLS needed since

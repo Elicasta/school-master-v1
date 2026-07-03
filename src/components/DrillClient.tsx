@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { LANE_LIST, getLane } from "@/data/lanes";
 import { DrillLevel, DrillQuestion, LaneSlug } from "@/types";
-import { getScores, saveScores, logReviewEvent } from "@/lib/local-store";
+import { addMemoryCard, getReviewEvents, getScores, saveScores, logReviewEvent } from "@/lib/local-store";
 import { applyDrillResult, recordWeakVerse } from "@/lib/scoring";
-import { Check, X, Timer, ArrowRight } from "lucide-react";
+import { Check, X, Timer, ArrowRight, Sparkles, Loader2 } from "lucide-react";
 
 export function DrillClient() {
   const params = useSearchParams();
@@ -23,6 +23,11 @@ export function DrillClient() {
   const [sessionTotal, setSessionTotal] = useState(0);
   const [missed, setMissed] = useState<DrillQuestion[]>([]);
   const [leveledUp, setLeveledUp] = useState(false);
+  const [adaptiveMode, setAdaptiveMode] = useState(false);
+  const [adaptiveLoading, setAdaptiveLoading] = useState(false);
+  const [adaptiveError, setAdaptiveError] = useState<string | null>(null);
+  const [adaptiveCard, setAdaptiveCard] = useState<any | null>(null);
+  const [adaptiveCardAdded, setAdaptiveCardAdded] = useState(false);
   const autoAdvanceTimer = useRef<number | null>(null);
 
   const lane = getLane(laneSlug)!;
@@ -42,6 +47,57 @@ export function DrillClient() {
   }, [laneSlug, level]);
 
   const current = queue[index];
+
+  async function loadAdaptiveQuestion() {
+    setAdaptiveLoading(true);
+    setAdaptiveError(null);
+    setAdaptiveCard(null);
+    setAdaptiveCardAdded(false);
+    try {
+      const scores = getScores();
+      const recentMisses = getReviewEvents()
+        .filter((e) => e.correct === false)
+        .slice(-8)
+        .map((e) => `${e.kind}:${e.refId}`);
+      const res = await fetch("/api/drill/adaptive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          laneSlug,
+          level,
+          recentMisses,
+          weakVerseIds: scores.weakVerseIds,
+          weakObjectionIds: scores.weakObjectionIds,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Adaptive drill failed.");
+      const generated: DrillQuestion = {
+        id: `adaptive-${laneSlug}-${Date.now()}`,
+        level,
+        type: data.type ?? "answer-objection",
+        prompt: data.prompt,
+        choices: data.choices,
+        answer: data.answer,
+        verseId: data.verseId || undefined,
+      };
+      setQueue([generated]);
+      setIndex(0);
+      setRevealed(false);
+      setAnswerShown(false);
+      setUserAnswer("");
+      setAdaptiveCard(data.memoryCard ?? null);
+    } catch (err: any) {
+      setAdaptiveError(err?.message ?? "Adaptive drill failed.");
+    } finally {
+      setAdaptiveLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (adaptiveMode) loadAdaptiveQuestion();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adaptiveMode, laneSlug, level]);
 
   function grade(correct: boolean) {
     setRevealed(true);
@@ -64,6 +120,26 @@ export function DrillClient() {
       correct,
       createdAt: new Date().toISOString(),
     });
+
+    if (!correct && adaptiveMode && adaptiveCard && !adaptiveCardAdded) {
+      addMemoryCard({
+        id: `adaptive-card-${laneSlug}-${current.id}`,
+        laneSlug,
+        verseId: current.verseId || current.id,
+        reference: adaptiveCard.reference || "Adaptive review",
+        phrase: adaptiveCard.phrase || current.prompt,
+        fullTextPlaceholder: adaptiveCard.fullTextPlaceholder || current.answer,
+        function: adaptiveCard.function || "Review the exact point that caused hesitation.",
+        difficulty: 250,
+        intervalDays: 0,
+        repetitions: 0,
+        lastReviewed: null,
+        nextReview: new Date().toISOString(),
+        correctCount: 0,
+        missCount: 1,
+      });
+      setAdaptiveCardAdded(true);
+    }
 
     // Difficulty signal: a strong session (>=85%, at least 4 questions) earns a
     // "leveled up" badge on this feedback screen. It doesn't gate advancement,
@@ -90,7 +166,9 @@ export function DrillClient() {
     // moving to the next level (looping 7 back to 1), not resetting to the same
     // question, that reset was the actual bug behind "next question does nothing."
     const hasMoreInQueue = index + 1 < queue.length;
-    if (hasMoreInQueue) {
+    if (adaptiveMode) {
+      loadAdaptiveQuestion();
+    } else if (hasMoreInQueue) {
       setIndex((i) => i + 1);
     } else {
       setLevel((l) => (l >= 7 ? 1 : ((l + 1) as DrillLevel)));
@@ -119,6 +197,33 @@ export function DrillClient() {
           Strong session, {sessionCorrect}/{sessionTotal} correct
         </div>
       )}
+
+      <div className="paper-card p-3 mb-4 flex items-start gap-3">
+        <Sparkles size={16} className="text-gold mt-0.5 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">Adaptive AI drills</p>
+              <p className="text-xs text-ink-faint">Uses misses and weak verses to make tighter multiple choice traps.</p>
+            </div>
+            <button
+              onClick={() => setAdaptiveMode((v) => !v)}
+              className={`text-xs px-3 py-2 rounded-full border shrink-0 ${adaptiveMode ? "bg-ink text-paper border-ink" : "border-line text-ink-faint"}`}
+            >
+              {adaptiveMode ? "On" : "Off"}
+            </button>
+          </div>
+          {adaptiveMode && (
+            <div className="mt-2 flex items-center gap-3">
+              <button onClick={loadAdaptiveQuestion} disabled={adaptiveLoading} className="text-xs text-gold underline underline-offset-4">
+                {adaptiveLoading ? <Loader2 size={11} className="inline animate-spin mr-1" /> : null}
+                Generate harder question
+              </button>
+              {adaptiveError && <p className="text-xs text-rose">{adaptiveError}</p>}
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="flex gap-2 mb-6 flex-wrap">
         <select
@@ -190,9 +295,16 @@ export function DrillClient() {
       </div>
 
       {revealed && (
-        <button onClick={() => goToNext()} className="btn-primary w-full flex items-center justify-center gap-2">
-          Continue now <ArrowRight size={14} />
-        </button>
+        <div className="space-y-3">
+          {adaptiveMode && adaptiveCardAdded && (
+            <div className="paper-card p-3 bg-gold-dim text-sm">
+              Missed point saved as a new memory card due now.
+            </div>
+          )}
+          <button onClick={() => goToNext()} className="btn-primary w-full flex items-center justify-center gap-2">
+            Continue now <ArrowRight size={14} />
+          </button>
+        </div>
       )}
 
       {missed.length > 0 && (

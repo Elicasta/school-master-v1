@@ -214,3 +214,34 @@ scripts/
   transcripts.
 - Drill Mode now shows missed count live next to correct count, not just at the end.
 
+
+## Current pass: debate coach, adaptive drills, real sync
+
+This build adds the Apostolic Logic training loop:
+
+- AI Debate now has a **Pure debate / Coach on** switch. Opponent replies stay clean. Coaching notes are still saved as hidden `coach` messages so the transcript can be reviewed later.
+- Gemini debate receives the local training profile: weak lanes, weak verses, weak objections, and recent misses. It should press the places where the user hesitates instead of acting like a generic chatbot.
+- Drill Mode now has **Adaptive AI drills**. It generates tighter multiple-choice questions with plausible wrong answers, not obvious long decoys.
+- When an adaptive question is missed, the app writes a new due-now memory card into the local memory library so the card bank expands over time.
+- Dashboard stats now derive from real review/debate activity: weekly accuracy, total reviews logged, saved debate sessions, due cards, and lane mastery.
+- Login UI is cleaner on mobile. Compact mode no longer dumps the whole auth form into the top bar.
+- Training sync now covers scores, memory cards, and review events, not just debate transcripts.
+
+### Existing Supabase projects
+
+Run this once in Supabase SQL editor before deploying:
+
+```sql
+alter table memory_cards add column if not exists client_id text;
+alter table review_events add column if not exists client_id text;
+
+create unique index if not exists memory_cards_user_client_id_idx
+  on memory_cards(user_id, client_id)
+  where client_id is not null;
+
+create unique index if not exists review_events_user_client_id_idx
+  on review_events(user_id, client_id)
+  where client_id is not null;
+```
+
+Or run `supabase/training-sync-migration.sql`.

@@ -12,11 +12,14 @@ const KEYS = {
   palaces: "sm_mind_palaces",
   events: "sm_review_events",
   transcripts: "sm_transcripts",
+  lastSync: "sm_last_sync",
 } as const;
 
 export interface DebateMessage {
-  role: "user" | "opponent";
+  role: "user" | "opponent" | "coach";
   content: string;
+  hidden?: boolean;
+  createdAt?: string;
 }
 
 export interface DebateTranscript {
@@ -46,23 +49,34 @@ function write<T>(key: string, value: T) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // storage full or unavailable, fail silently, app still works in-memory for the session
+    // storage full or unavailable, fail silently; app still works for the session
   }
 }
 
 export function getScores(): UserScores {
-  return read(KEYS.scores, emptyScores());
+  return normalizeScores(read(KEYS.scores, emptyScores()));
 }
 
 export function saveScores(scores: UserScores) {
-  write(KEYS.scores, scores);
+  write(KEYS.scores, normalizeScores(scores));
+}
+
+export function normalizeScores(scores: Partial<UserScores> | null | undefined): UserScores {
+  const base = emptyScores();
+  const incoming = scores ?? {};
+  return {
+    ...base,
+    ...incoming,
+    laneMastery: { ...base.laneMastery, ...(incoming.laneMastery ?? {}) },
+    weakVerseIds: incoming.weakVerseIds ?? [],
+    weakObjectionIds: incoming.weakObjectionIds ?? [],
+  };
 }
 
 export function getMemoryCards(): MemoryCard[] {
   const existing = read<MemoryCard[] | null>(KEYS.memoryCards, null);
   if (existing && existing.length > 0) return existing;
 
-  // First run: seed one memory card per anchor verse across all 8 lanes
   const seeded: MemoryCard[] = [];
   for (const lane of LANE_LIST) {
     for (const verse of lane.verses.filter((v) => v.role === "anchor")) {
@@ -84,7 +98,37 @@ export function getMemoryCards(): MemoryCard[] {
 }
 
 export function saveMemoryCards(cards: MemoryCard[]) {
-  write(KEYS.memoryCards, cards);
+  write(KEYS.memoryCards, dedupeMemoryCards(cards));
+}
+
+export function addMemoryCard(card: MemoryCard): MemoryCard[] {
+  const cards = dedupeMemoryCards([...getMemoryCards(), card]);
+  saveMemoryCards(cards);
+  return cards;
+}
+
+export function dedupeMemoryCards(cards: MemoryCard[]): MemoryCard[] {
+  const seen = new Map<string, MemoryCard>();
+  for (const card of cards) {
+    const key = card.id || `${card.laneSlug}-${card.verseId}-${card.reference}-${card.function}`;
+    const current = seen.get(key);
+    if (!current) seen.set(key, card);
+    else {
+      seen.set(key, {
+        ...current,
+        ...card,
+        correctCount: Math.max(current.correctCount ?? 0, card.correctCount ?? 0),
+        missCount: Math.max(current.missCount ?? 0, card.missCount ?? 0),
+        repetitions: Math.max(current.repetitions ?? 0, card.repetitions ?? 0),
+        nextReview: earlierIso(current.nextReview, card.nextReview),
+      });
+    }
+  }
+  return Array.from(seen.values());
+}
+
+function earlierIso(a: string, b: string): string {
+  return new Date(a).getTime() <= new Date(b).getTime() ? a : b;
 }
 
 export function getMindPalaces(): MindPalaceRoute[] {
@@ -101,16 +145,24 @@ export function saveMindPalaces(routes: MindPalaceRoute[]) {
 export function logReviewEvent(event: ReviewEvent) {
   const events = read<ReviewEvent[]>(KEYS.events, []);
   events.push(event);
-  write(KEYS.events, events.slice(-500)); // cap history to last 500 events locally
+  write(KEYS.events, events.slice(-800));
 }
 
 export function getReviewEvents(): ReviewEvent[] {
   return read<ReviewEvent[]>(KEYS.events, []);
 }
 
-// ---------- Debate transcripts ----------
-// Always saved locally, zero setup required. Synced to Supabase in the background
-// when the person is signed in (see saveTranscriptCloud in AuthWidget usage sites).
+export function saveReviewEvents(events: ReviewEvent[]) {
+  write(KEYS.events, events.slice(-800));
+}
+
+export function getLastSync(): string | null {
+  return read<string | null>(KEYS.lastSync, null);
+}
+
+export function setLastSync(value: string) {
+  write(KEYS.lastSync, value);
+}
 
 export function getTranscripts(): DebateTranscript[] {
   return read<DebateTranscript[]>(KEYS.transcripts, []).sort(
@@ -127,7 +179,7 @@ export function saveTranscript(t: DebateTranscript) {
   const idx = all.findIndex((x) => x.id === t.id);
   if (idx >= 0) all[idx] = t;
   else all.push(t);
-  write(KEYS.transcripts, all.slice(-100)); // cap local history at 100 transcripts
+  write(KEYS.transcripts, all.slice(-100));
 }
 
 export function deleteTranscript(id: string) {
@@ -135,9 +187,6 @@ export function deleteTranscript(id: string) {
   write(KEYS.transcripts, all.filter((t) => t.id !== id));
 }
 
-// Draft key per mode+opponent, so a live in-progress chat survives navigating away
-// and back (the "chat disappears" bug) without polluting the saved-transcript list
-// until the person actually hits Save.
 export function getDraftKey(mode: "ai" | "browser-ai", opponentType: string): string {
   return `sm_draft_${mode}_${opponentType}`;
 }

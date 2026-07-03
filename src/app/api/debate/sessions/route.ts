@@ -5,7 +5,7 @@ interface SaveSessionBody {
   opponentType: string;
   topic?: string;
   mode: "ai" | "browser-ai";
-  messages: { role: "user" | "opponent"; content: string }[];
+  messages: { role: "user" | "opponent" | "coach"; content: string }[];
 }
 
 // POST saves (or overwrites, keyed by clientId) a full debate transcript for the
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
   const rows = body.messages.map((m) => ({
     session_id: session.id,
-    role: m.role === "user" ? "user" : "opponent",
+    role: m.role === "coach" ? "coach" : m.role === "user" ? "user" : "opponent",
     content: m.content,
   }));
 
