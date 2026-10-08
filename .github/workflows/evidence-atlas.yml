@@ -1,0 +1,31 @@
+name: Evidence Atlas checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - feat/evidence-atlas-isaiah-48-v2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  atlas:
+    name: Test, typecheck and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Public placeholders only: build never connects to a production database.
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-public-placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:atlas
+      - run: npx tsc --noEmit
+      - run: npm run build

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, LayoutGrid, Zap, Brain, Swords, Landmark, Library, Settings, Target, ShieldCheck } from "lucide-react";
+import { Orbit, BookOpen, LayoutGrid, Zap, Brain, Swords, Landmark, Library, Settings, Target, ShieldCheck } from "lucide-react";
 import { AuthWidget } from "@/components/AuthWidget";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutGrid },
+  { href: "/atlas", label: "Evidence Atlas", icon: Orbit },
   { href: "/lanes", label: "Lanes", icon: BookOpen },
   { href: "/apostolic-logic", label: "Style", icon: ShieldCheck },
   { href: "/coach", label: "Coach", icon: Target },
@@ -59,7 +60,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
         <main className="pb-24 md:pb-10">{children}</main>
 
         <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-surface/90 backdrop-blur-xs border-t border-line grid grid-cols-5">
-          {NAV_ITEMS.filter((i) => ["/", "/apostolic-logic", "/coach", "/memory", "/debate"].includes(i.href)).map((item) => {
+          {NAV_ITEMS.filter((i) => ["/", "/atlas", "/coach", "/memory", "/debate"].includes(i.href)).map((item) => {
             const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
             const Icon = item.icon;
             return (
