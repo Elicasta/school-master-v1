@@ -15,7 +15,7 @@ export function AtlasExplorer() {
   const matchIds = new Set(matches.map((topic) => topic.id));
 
   return (
-    <main className="atlas-shell">
+    <div className="atlas-shell">
       <div className="atlas-heading">
         <div className="atlas-wordmark"><span className="atlas-star-symbol">✳</span> SCHOOLMASTER <span>/</span> EVIDENCE ATLAS</div>
         <span className="atlas-version">RESEARCH EDITION · V2</span>
@@ -25,7 +25,7 @@ export function AtlasExplorer() {
         <h1>Every argument has<br /><em>a point of origin.</em></h1>
         <p>Explore the passages behind major debates about the nature of God. Follow what the text says, where interpretations differ, and which conclusions require another step.</p>
       </section>
-      <div className="atlas-stage">
+      <div id="atlas-focus" className="atlas-stage">
         <div className="atlas-universe">
           <div className="atlas-space-grid" aria-hidden="true" />
           <div className="atlas-core-glow" aria-hidden="true" />
@@ -98,7 +98,6 @@ export function AtlasExplorer() {
         </div>
       </section>
       <div className="atlas-footer"><div><Compass size={19} /> THE ATLAS IS AN EVIDENCE GUIDE, NOT AN AUTOMATED VERDICT.</div><div><BookOpenText size={17} /> <Link href="/lanes">Doctrine curriculum</Link><span>·</span><Sparkles size={17} /><Link href="/debate">Debate practice</Link></div></div>
-      <span id="atlas-focus" className="atlas-scroll-target" />
-    </main>
+    </div>
   );
 }

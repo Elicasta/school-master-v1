@@ -30,7 +30,7 @@ export function AtlasCaseStudy() {
   }
 
   return (
-    <main className="atlas-shell atlas-case-page">
+    <div className="atlas-shell atlas-case-page">
       <div className="atlas-case-top">
         <Link href="/atlas" className="atlas-back"><ArrowLeft size={16} /> Back to the atlas</Link>
         <span className="atlas-version">CASE 001 / RESEARCH DRAFT</span>
@@ -114,6 +114,6 @@ export function AtlasCaseStudy() {
         <div><span className="atlas-section-label">QUESTIONS STILL OPEN</span><ul>{study.unresolved.map((question) => <li key={question}>{question}</li>)}</ul></div>
       </footer>
       <div className="atlas-case-bottom"><Link href="/atlas"><ArrowLeft size={16} /> All arguments</Link><Link href="/debate/trinitarian">Practice the discussion <ArrowUpRight size={17} /></Link></div>
-    </main>
+    </div>
   );
 }

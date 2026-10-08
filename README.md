@@ -249,8 +249,8 @@ Or run `supabase/training-sync-migration.sql`.
 
 ## Evidence Atlas V2 (working draft)
 
-The public argument explorer lives at \`/atlas\`; the Isaiah 48:16 pilot is at
-\`/atlas/isaiah-48-16\`. This is a research experience, separate from
+The public argument explorer lives at `/atlas`; the Isaiah 48:16 pilot is at
+`/atlas/isaiah-48-16`. This is a research experience, separate from
 the private scoring and training functions of Schoolmaster.
 
 - Twelve argument topics are mapped. **Only Isaiah 48:16 has a working case**.
@@ -264,6 +264,6 @@ the private scoring and training functions of Schoolmaster.
 - The interactive map has a list fallback, native buttons, focus handling, responsive
   layouts, and reduced-motion support. No WebGL or external API key is required.
 
-Run \`npm run test:atlas\` to check topic integrity and evidence provenance.
+Run `npm run test:atlas` to check topic integrity and evidence provenance.
 Before publishing the pilot as reviewed, have a human editor check quotations,
 source framing, and the opposing reading.

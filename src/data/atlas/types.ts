@@ -53,6 +53,8 @@ export interface EvidenceCase {
   subtitle: string;
   passage: string;
   status: "working-draft" | "reviewed";
+  reviewedBy?: string;
+  reviewedAt?: string;
   translation: string;
   verses: VerseEntry[];
   centralQuestion: string;
@@ -69,7 +71,7 @@ export function validateEvidenceCase(item: EvidenceCase): string[] {
   const ids = new Set<string>();
   const sources = new Set(item.sources.map((s) => s.id));
   if (!item.slug || !item.title || !item.centralQuestion) problems.push("Missing required case identity");
-  if (item.status === "reviewed") problems.push("Reviewed status requires a documented editorial sign-off");
+  if (item.status === "reviewed" && (!item.reviewedBy?.trim() || !item.reviewedAt || Number.isNaN(Date.parse(item.reviewedAt)))) problems.push("Reviewed status requires a documented editorial sign-off");
   if (new Set(item.verses.map((v) => v.number)).size !== item.verses.length) problems.push("Duplicate verse number");
   for (const source of item.sources) {
     if (ids.has(source.id)) problems.push("Duplicate source ID: " + source.id);
