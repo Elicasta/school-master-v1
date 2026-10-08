@@ -245,3 +245,25 @@ create unique index if not exists review_events_user_client_id_idx
 ```
 
 Or run `supabase/training-sync-migration.sql`.
+
+
+## Evidence Atlas V2 (working draft)
+
+The public argument explorer lives at \`/atlas\`; the Isaiah 48:16 pilot is at
+\`/atlas/isaiah-48-16\`. This is a research experience, separate from
+the private scoring and training functions of Schoolmaster.
+
+- Twelve argument topics are mapped. **Only Isaiah 48:16 has a working case**.
+  The other topics are labeled as research targets rather than fictitious articles.
+- The case contains the **KJV context (Isaiah 48:12–17)**, sequential evidence,
+  three explicitly distinguished readings, editorial uncertainties, and direct source links.
+- Interpretive and theological inferences are labeled; disputed statements do not
+  receive automatic "proven" verdicts.
+- No videos, scholar quotations, or timestamps are invented. YouTube ingestion and
+  admin editorial approvals are future work, not a hidden scrape in this release.
+- The interactive map has a list fallback, native buttons, focus handling, responsive
+  layouts, and reduced-motion support. No WebGL or external API key is required.
+
+Run \`npm run test:atlas\` to check topic integrity and evidence provenance.
+Before publishing the pilot as reviewed, have a human editor check quotations,
+source framing, and the opposing reading.
